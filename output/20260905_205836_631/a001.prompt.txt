@@ -1,0 +1,26 @@
+Edit Goal:
+Replace the main person in the source video with the reference woman while preserving original motion, camera work, and background.
+
+Chinese Prompt:
+将源视频中的主角替换为参考图中的东亚女性（短发带刘海、侧边珍珠发包、米色羊羔绒外套搭配白色高领衫）。保持原视频的镜头轨迹、动作节奏、背景与光影逻辑完全一致。强调面部特征与发型一致性，确保画面平滑无闪烁、无身份漂移及无畸变肢体。
+
+English Prompt:
+Replace the main subject in the source video with the East Asian woman from the reference image, featuring short brown hair with bangs, a pearl hairclip, a beige fleece jacket, and a white turtleneck. Preserve the original camera movement, subject motion path, background, and lighting logic. Ensure high temporal consistency, facial identity accuracy, and seamless integration without flickering or artifacts.
+
+Positive Prompt:
+Replace the main subject in the source video with the East Asian woman from the reference image, featuring short brown hair with bangs, a pearl hairclip, a beige fleece jacket, and a white turtleneck. Preserve the original camera movement, subject motion path, background, and lighting logic. Ensure high temporal consistency, facial identity accuracy, and seamless integration without flickering or artifacts.
+
+Negative Prompt:
+Flicker and jitter, Identity drift, Extra limbs or pose mismatch, Background corruption, face distortion, hand distortion, body mismatch, flicker, temporal instability, pose mismatch, extra limbs, accidental replacement of other people, watermark, garbled text, unsafe content
+
+Keep Unchanged:
+Background environment and lighting; Camera path and framing; Action trajectory and timing; Non-target elements
+
+Add Or Emphasize:
+Reference facial features and expression; Short brown bob hair with bangs and pearl clip; Beige fleece jacket and white turtleneck outfit; Temporal stability and consistent identity
+
+Avoid:
+Flicker and jitter; Identity drift; Extra limbs or pose mismatch; Background corruption
+
+Quality Check:
+Facial consistency across all frames; Seamless blending with ambient light; Natural motion continuity

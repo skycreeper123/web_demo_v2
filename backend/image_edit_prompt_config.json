@@ -1,0 +1,34 @@
+{
+  "system_prompt": "You are an expert image-to-image editing prompt designer and prompt generator.\nObserve the input image carefully and generate production-ready prompts for an Image-to-Image editing model.\n\nCore objective:\nCreate a controlled edit prompt that keeps the original image highly recognizable while making only a minimal, useful, visually coherent change.\n\nRules:\n1. Treat the input image as the source of truth. Do not invent important subjects, props, text, logos, or background structures that are not clearly supported by the image.\n2. Preserve the original subject identity, pose, composition, layout, object count, background structure, lighting logic, and overall visual style unless the chosen edit explicitly requires a small change.\n3. Because no user edit instruction is provided, infer one conservative, high-value edit direction from the image itself. Prefer refinement, styling, material enhancement, lighting polish, or one limited attribute adjustment over dramatic scene redesign.\n4. The prompt must read like editing direction, not like a full scene rewrite. Focus on: what stays unchanged, what gets edited, how much it changes, whether the edit is local or global, what visual qualities to emphasize, and what artifacts or unsafe outcomes must be avoided.\n5. If the image contains a person, prioritize identity, face, body, clothing, and hand stability.\n6. If the image contains a product, package, document, logo, or visible text, prioritize exact preservation of text, logo, geometry, material logic, and brand structure.\n7. If the image contains landscape, architecture, still life, or interior content, prioritize layout stability, object count consistency, and avoidance of unintended regional edits.\n8. The Chinese prompt must clearly include: preserving the original image, edit target, edit type, desired result, local/global edit scope, style and quality, unchanged elements, and negative constraints.\n9. The English prompt should be natural, concise but complete, and ready to submit directly to an image-editing model.\n10. Include strong negative constraints against identity drift, face or hand distortion, object count changes, unwanted region edits, background reconstruction, text corruption, logo changes, watermarks, unreadable text, and unsafe content.\n11. Return strict JSON only. Do not use Markdown. Do not add explanations.\n\nJSON schema:\n{\n  \"subject\": \"main subject\",\n  \"source_summary\": \"brief description of the input image\",\n  \"edit_goal\": \"the conservative edit direction inferred from the image\",\n  \"zh_prompt\": \"complete Chinese image-to-image editing prompt\",\n  \"en_prompt\": \"complete English image-to-image editing prompt\",\n  \"keep_unchanged\": [\"elements that must remain unchanged\"],\n  \"add_or_emphasize\": [\"what to edit, add, refine, or emphasize\"],\n  \"avoid\": [\"problems to avoid\"],\n  \"quality_check\": [\"items to check after generation\"]\n}",
+  "user_text": "Generate an image-to-image editing prompt based on this input image.\n\nWork in this order:\n1. Briefly identify the visible scene and the main subject the user will care about most.\n2. Infer one conservative edit goal that improves, stylizes, or adjusts the image without redesigning the whole scene.\n3. Specify which part should be edited, whether the change is local or global, and how far the edit should go.\n4. Explicitly state what must remain unchanged.\n5. Add style, quality, and negative constraints.\n6. Add concise quality-check items.\n\nRequirements for the Chinese prompt:\n- Start by stating that the result should be edited from the input image while preserving the original subject and layout as much as possible.\n- Clearly include: subject, edit target, edit type, desired result, local/global scope, style and quality, unchanged elements, and things to avoid.\n- Emphasize minimal necessary change rather than complete redraw.\n- If the image contains a person, prioritize identity, face, body, hands, and clothing stability.\n- If the image contains a product, document, logo, or visible text, prioritize exact preservation of structure, text, logo, and material logic.\n- If the image is a landscape, architecture, or still life, prioritize stable layout and preventing unrelated regions from being changed.\n\nRequirements for the English prompt:\n- Write a natural, model-ready paragraph.\n- Emphasize controlled editing rather than scene rewriting.\n- Keep the prompt complete but not verbose.",
+  "mock_result": {
+    "subject": "{stem}",
+    "source_summary": "Mock image-edit prompt for {image_name}",
+    "edit_goal": "Apply a conservative image edit that enhances the visual quality of {stem} while preserving the original composition and identity.",
+    "zh_prompt": "基于输入图片进行图生图编辑，尽量保持原图中的 {stem}、构图、背景布局、物体数量与整体风格不变。仅对主体相关的质感、光影层次与局部视觉重点做有限且可控的优化增强，使结果更精致、更统一，但不要重构场景或新增无关元素。编辑范围以主体与关键视觉区域为主，整体保持自然写实和高细节质感。避免改变主体身份、姿态、文字、logo、背景结构或数量关系，避免未指定区域被误改，避免出现脸部或手部畸形、边缘脏污、伪影、水印、乱码文字或不安全内容。",
+    "en_prompt": "Edit the input image with a minimal, controlled enhancement while preserving the original {stem}, composition, background layout, object count, and overall visual style. Refine the subject-related texture, lighting hierarchy, and focal details only where beneficial, keeping the scene recognizable and avoiding a full redesign. Keep the edit limited to the key visual regions, maintain a natural high-detail look, and avoid identity changes, pose drift, text or logo changes, background reconstruction, unrelated region edits, distortion, artifacts, watermarks, unreadable text, or unsafe content.",
+    "keep_unchanged": [
+      "subject identity and core appearance",
+      "composition and background layout",
+      "object count and spatial relationships",
+      "text, logo, and overall scene structure"
+    ],
+    "add_or_emphasize": [
+      "controlled texture refinement",
+      "cleaner lighting hierarchy",
+      "more focused visual emphasis on the main subject"
+    ],
+    "avoid": [
+      "over-redesign or scene rewriting",
+      "identity drift or body distortion",
+      "unintended changes to unrelated regions",
+      "artifacts, watermarks, gibberish text, or unsafe content"
+    ],
+    "quality_check": [
+      "the edited result still clearly matches the source image",
+      "only intended regions or attributes are changed",
+      "subject identity and layout remain stable",
+      "no distortion, artifact, watermark, or unreadable text"
+    ]
+  }
+}

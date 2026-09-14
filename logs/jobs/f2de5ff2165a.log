@@ -1,0 +1,10 @@
+2026-09-05 20:58:36,613 | INFO     | web_demo.job.f2de5ff2165a | Job created. kind=video total=1 log_file=D:\AIGC\web_demo\logs\jobs\f2de5ff2165a.log
+2026-09-05 20:58:36,614 | INFO     | web_demo.job.f2de5ff2165a | Starting video prompt job. items=1 output_root=D:\AIGC\web_demo\output
+2026-09-05 20:58:36,630 | INFO     | web_demo.job.f2de5ff2165a | Status changed: queued -> running
+2026-09-05 20:58:36,660 | INFO     | web_demo.job.f2de5ff2165a | Processing video: a001.mp4
+2026-09-05 20:58:36,671 | INFO     | web_demo.job.f2de5ff2165a | Source video staged: D:\AIGC\web_demo\output\20260905_205836_631\source_media\videos\a001.mp4
+2026-09-05 20:58:36,679 | INFO     | web_demo.job.f2de5ff2165a | Main reference staged: D:\AIGC\web_demo\output\20260905_205836_631\source_media\references\a001.jpg
+2026-09-05 20:59:51,779 | INFO     | web_demo.job.f2de5ff2165a | Saved: a001.prompt.json / a001.prompt.txt
+2026-09-05 20:59:51,804 | INFO     | web_demo.job.f2de5ff2165a | Status changed: running -> completed
+2026-09-05 20:59:51,804 | INFO     | web_demo.job.f2de5ff2165a | Output directory: D:\AIGC\web_demo\output\20260905_205836_631
+2026-09-05 20:59:51,811 | INFO     | web_demo.job.f2de5ff2165a | Done. Output: D:\AIGC\web_demo\output\20260905_205836_631

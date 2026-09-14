@@ -1,0 +1,376 @@
+{
+  "3": {
+    "inputs": {
+      "seed": [
+        "150",
+        0
+      ],
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "204",
+        0
+      ],
+      "positive": [
+        "203",
+        0
+      ],
+      "negative": [
+        "202",
+        0
+      ],
+      "latent_image": [
+        "175",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "K采样器"
+    }
+  },
+  "8": {
+    "inputs": {
+      "samples": [
+        "3",
+        0
+      ],
+      "vae": [
+        "39",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "38": {
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP"
+    }
+  },
+  "39": {
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "60": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  },
+  "88": {
+    "inputs": {
+      "pixels": [
+        "93",
+        0
+      ],
+      "vae": [
+        "39",
+        0
+      ]
+    },
+    "class_type": "VAEEncode",
+    "_meta": {
+      "title": "VAE编码"
+    }
+  },
+  "93": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "170",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels",
+    "_meta": {
+      "title": "缩放图像（像素）"
+    }
+  },
+  "110": {
+    "inputs": {
+      "prompt": "",
+      "clip": [
+        "38",
+        0
+      ],
+      "vae": [
+        "39",
+        0
+      ],
+      "image1": [
+        "93",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "文本编码（QwenImageEditPlus）"
+    }
+  },
+  "144": {
+    "inputs": {
+      "filename_prefix": [
+        "186",
+        0
+      ],
+      "images": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "图像将会保存到“Comfyui/output/Qwen” 文件夹"
+    }
+  },
+  "148": {
+    "inputs": {
+      "value": "以参考图片为基础生成一张真实照片，保持原始构图、俯视角度、铁轨布局、建筑位置、道路结构、地面材质和整体场景不变。删除画面中的火车、卡车、公交车、消防车以及所有道路车辆，让道路和铁轨区域变为空旷干净的状态。保留所有建筑、站台、房屋、仓库、道路标线、草地和轨道细节不变，透视关系准确，光线自然，画面真实写实，像同一场景中车辆刚刚离开后的静态照片。"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "提示词"
+    }
+  },
+  "150": {
+    "inputs": {
+      "seed": 557
+    },
+    "class_type": "easy seed",
+    "_meta": {
+      "title": "随机种子改变生成结果"
+    }
+  },
+  "151": {
+    "inputs": {
+      "image": "8月7日6.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "图像1"
+    }
+  },
+  "170": {
+    "inputs": {
+      "any_03": [
+        "151",
+        0
+      ]
+    },
+    "class_type": "Any Switch (rgthree)",
+    "_meta": {
+      "title": "任意切换"
+    }
+  },
+  "175": {
+    "inputs": {
+      "any_02": [
+        "88",
+        0
+      ]
+    },
+    "class_type": "Any Switch (rgthree)",
+    "_meta": {
+      "title": "任意切换"
+    }
+  },
+  "186": {
+    "inputs": {
+      "string_a": [
+        "187",
+        0
+      ],
+      "string_b": [
+        "191",
+        0
+      ],
+      "delimiter": "_"
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "连接"
+    }
+  },
+  "187": {
+    "inputs": {
+      "string_a": [
+        "190",
+        0
+      ],
+      "string_b": [
+        "193",
+        0
+      ],
+      "delimiter": "/"
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "连接"
+    }
+  },
+  "190": {
+    "inputs": {
+      "value": "Qwen"
+    },
+    "class_type": "PrimitiveString",
+    "_meta": {
+      "title": "文件夹名字"
+    }
+  },
+  "191": {
+    "inputs": {
+      "value": "Qwen"
+    },
+    "class_type": "PrimitiveString",
+    "_meta": {
+      "title": "图片来源"
+    }
+  },
+  "193": {
+    "inputs": {
+      "value": "Name"
+    },
+    "class_type": "PrimitiveString",
+    "_meta": {
+      "title": "保存图片的名称 保存到“output/Qwen” 文件夹里面"
+    }
+  },
+  "196": {
+    "inputs": {
+      "images": [
+        "93",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "预览图像"
+    }
+  },
+  "200": {
+    "inputs": {
+      "unet_name": "Qwen/qwen_image_edit_2511_fp8mixed.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "201": {
+    "inputs": {
+      "shift": 3.1,
+      "model": [
+        "208",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "采样算法（AuraFlow）"
+    }
+  },
+  "202": {
+    "inputs": {
+      "reference_latents_method": "index_timestep_zero",
+      "conditioning": [
+        "110",
+        0
+      ]
+    },
+    "class_type": "FluxKontextMultiReferenceLatentMethod",
+    "_meta": {
+      "title": "Edit Model Reference Method"
+    }
+  },
+  "203": {
+    "inputs": {
+      "reference_latents_method": "index_timestep_zero",
+      "conditioning": [
+        "205",
+        0
+      ]
+    },
+    "class_type": "FluxKontextMultiReferenceLatentMethod",
+    "_meta": {
+      "title": "Edit Model Reference Method"
+    }
+  },
+  "204": {
+    "inputs": {
+      "strength": 1,
+      "model": [
+        "201",
+        0
+      ]
+    },
+    "class_type": "CFGNorm",
+    "_meta": {
+      "title": "CFG归一化"
+    }
+  },
+  "205": {
+    "inputs": {
+      "prompt": [
+        "148",
+        0
+      ],
+      "clip": [
+        "38",
+        0
+      ],
+      "vae": [
+        "39",
+        0
+      ],
+      "image1": [
+        "93",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "TextEncodeQwenImageEditPlus (Positive)"
+    }
+  },
+  "208": {
+    "inputs": {
+      "lora_name": "Qwen/Qwen-Image-Edit-2511-Lightning-4steps-V1.0-bf16.safetensors",
+      "strength_model": 1,
+      "model": [
+        "200",
+        0
+      ]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoRA加载器（仅模型）"
+    }
+  }
+}

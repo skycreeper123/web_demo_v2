@@ -1,0 +1,1123 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Prompt Tool Studio</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="page-bg"></div>
+  <main class="page-shell">
+    <header class="topbar card">
+      <div class="topbar-left">
+        <div class="brand-mark">PT</div>
+        <div>
+          <p class="eyebrow">Prompt Tool Studio</p>
+          <h1 id="viewTitle">首页</h1>
+          <p id="viewSubtitle" class="subtle">统一入口，覆盖 Prompt 与视频剪辑。</p>
+        </div>
+      </div>
+      <div class="topbar-actions">
+        <button id="navHomeBtn" class="btn btn-ghost">首页</button>
+        <button id="navBackBtn" class="btn btn-ghost">返回</button>
+        <button id="shutdownAppBtn" class="btn btn-ghost">退出</button>
+      </div>
+    </header>
+
+    <section id="homeView" class="view">
+      <div class="home-stack">
+        <article class="feature-card feature-card-wide card">
+          <div class="feature-layout">
+            <div class="feature-copy">
+              <p class="panel-kicker">Main Module</p>
+              <h2>Prompt 生成工作台</h2>
+              <p>统一管理 3 个 Prompt 模块，后续可继续扩展。</p>
+              <ul class="feature-list">
+                <li>图片 / 图生图 / 视频 Prompt</li>
+                <li>输入、配置、运行、输出独立</li>
+                <li>新模块可直接接入</li>
+              </ul>
+              <div class="feature-actions">
+                <button id="goPromptStudioBtn" class="btn btn-primary">进入</button>
+              </div>
+            </div>
+
+            <div class="module-overview card-shell">
+              <div class="section-header compact">
+                <div>
+                  <p class="panel-kicker">Included</p>
+                  <h2>已集成</h2>
+                </div>
+                <span class="chip chip-soft">统一切换</span>
+              </div>
+              <div id="promptModuleOverview" class="module-card-grid"></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="feature-card feature-card-wide card clip-feature-card">
+          <div class="feature-layout">
+            <div class="feature-copy">
+              <p class="panel-kicker">Batch Editing</p>
+              <h2>视频剪辑工作台</h2>
+              <p>集成 `batch_editing`，本地路径直连处理。</p>
+              <ul class="feature-list">
+                <li>按秒 / 按比例</li>
+                <li>ffmpeg / OpenCV</li>
+                <li>双文件夹合并</li>
+              </ul>
+              <div class="feature-actions">
+                <button id="goClipStudioBtn" class="btn btn-primary">进入</button>
+              </div>
+            </div>
+
+            <div class="module-overview card-shell">
+              <div class="section-header compact">
+                <div>
+                  <p class="panel-kicker">Included</p>
+                  <h2>功能</h2>
+                </div>
+                <span class="chip chip-soft">本地路径</span>
+              </div>
+              <div class="clip-overview-grid">
+                <span class="chip">按秒裁切</span>
+                <span class="chip">按比例裁切</span>
+                <span class="chip">前半段裁切</span>
+                <span class="chip">后半段裁切</span>
+                <span class="chip">双文件夹合并</span>
+              </div>
+              <p class="panel-note">结果按任务分目录保存。</p>
+            </div>
+          </div>
+        </article>
+
+        <article class="feature-card feature-card-wide card">
+          <div class="feature-layout">
+            <div class="feature-copy">
+              <p class="panel-kicker">ComfyUI</p>
+              <h2>本地 Comfy 通信工作台</h2>
+              <p>连接本机自托管 ComfyUI，提交工作流、监听执行并回收结果。</p>
+              <ul class="feature-list">
+                <li>本地路径投递输入图片 / 视频</li>
+                <li>固定模板或内联 API workflow</li>
+                <li>健康检查 / 运行 / 取消 / 重试</li>
+              </ul>
+              <div class="feature-actions">
+                <button id="goComfyStudioBtn" class="btn btn-primary">进入</button>
+              </div>
+            </div>
+
+            <div class="module-overview card-shell">
+              <div class="section-header compact">
+                <div>
+                  <p class="panel-kicker">Included</p>
+                  <h2>能力</h2>
+                </div>
+                <span class="chip chip-soft">本机 ComfyUI</span>
+              </div>
+              <div class="clip-overview-grid">
+                <span class="chip">Health</span>
+                <span class="chip">Workflow</span>
+                <span class="chip">WebSocket</span>
+                <span class="chip">Queue</span>
+                <span class="chip">History</span>
+              </div>
+              <p class="panel-note">适合接入 ComfyUI API workflow 的本地调用场景。</p>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section id="promptStudioView" class="view" hidden>
+      <article class="card studio-shell">
+        <div class="section-header studio-header">
+          <div>
+            <p class="panel-kicker">Workspace</p>
+            <h2>Prompt 子模块</h2>
+            <p class="panel-note">统一切换各 Prompt 模块。</p>
+          </div>
+          <span class="chip">统一大模块</span>
+        </div>
+        <div id="promptModuleTabs" class="module-switcher"></div>
+      </article>
+
+      <section id="imageView" class="prompt-module-panel">
+      <section class="stats-grid">
+        <article class="stat card">
+          <span>图片</span>
+          <strong id="imageSelectedCount">0</strong>
+          <small>已选</small>
+        </article>
+        <article class="stat card">
+          <span>状态</span>
+          <strong id="imageStatusBadge">待开始</strong>
+          <small id="imageJobMeta">未运行</small>
+        </article>
+        <article class="stat card">
+          <span>结果</span>
+          <strong id="imageResultCount">0</strong>
+          <small>文件</small>
+        </article>
+        <article class="stat card">
+          <span>输出目录</span>
+          <strong id="imageOutputRootValue">未设置</strong>
+          <small>图片</small>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <aside class="sidebar">
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 01</p>
+                <h2>选择图片</h2>
+              </div>
+              <span class="chip">拖拽 / 文件夹</span>
+            </div>
+            <label class="dropzone" id="imageDropzone">
+              <input id="imageInput" type="file" accept="image/*" multiple webkitdirectory directory mozdirectory />
+              <strong>选择或拖入图片</strong>
+              <span>JPG / PNG / WEBP，支持文件夹。</span>
+            </label>
+            <div id="imageFileList" class="stack-list empty">未选择图片</div>
+            <label class="prompt-field">
+              <span>图片源目录（本地文件生成完整路径时使用）</span>
+              <input id="imageSourceRootDir" class="input" type="text" placeholder="D:\media\images 或 /data/images" />
+            </label>
+            <label class="prompt-field">
+              <span>图片 URL（每行一条，可写 `文件名 | URL`）</span>
+              <textarea id="imageUrlInput" class="textarea" spellcheck="false" placeholder="demo.png | https://example.com/demo.png&#10;https://example.com/another-image.jpg"></textarea>
+            </label>
+            <div class="toggle-row">
+              <label class="toggle"><input data-path-style-group="image" type="checkbox" checked /> 使用 Linux 路径模式（支持 `/data/...`、`/home/...` 绝对路径）</label>
+            </div>
+            <p class="panel-note">选择文件夹时会优先用“源目录 + 相对路径”生成 CSV 完整路径；拖拽散文件时会回退为“源目录 + 文件名”。</p>
+          </article>
+
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 02</p>
+                <h2>API 配置</h2>
+                <p class="panel-note">保存后下次自动读取。</p>
+              </div>
+              <div class="section-actions">
+                <span class="chip chip-soft" id="imageModeBadge">Mock</span>
+                <button id="reloadImageApiConfigBtn" class="btn btn-ghost">读取</button>
+                <button id="saveImageApiConfigBtn" class="btn btn-primary">保存</button>
+              </div>
+            </div>
+            <div class="config-path">
+              <span>API 配置文件</span>
+              <code id="imageApiConfigPath">加载中...</code>
+            </div>
+            <div class="form-grid">
+              <label>
+                <span>API Key</span>
+                <input id="imageApiKey" class="input" type="password" placeholder="sk-..." />
+              </label>
+              <label>
+                <span>Base URL</span>
+                <input id="imageBaseUrl" class="input" type="text" placeholder="https://api.example.com/v1" />
+              </label>
+              <label>
+                <span>Model</span>
+                <input id="imageModel" class="input" type="text" placeholder="Prompt" />
+              </label>
+              <label>
+                <span>输出目录</span>
+                <input id="imageOutputDir" class="input" type="text" placeholder="D:\outputs\image_prompts" />
+              </label>
+            </div>
+            <div class="toggle-row">
+              <label class="toggle"><input id="imageLinuxPathEnabled" data-path-style-group="image" type="checkbox" checked /> 使用 Linux 路径模式（支持 `/data/...`、`/home/...` 绝对路径）</label>
+              <label class="toggle"><input id="imageUseMock" type="checkbox" checked /> 无 Key 时启用 mock</label>
+              <label class="toggle"><input id="imageOverwrite" type="checkbox" /> 覆盖已有结果</label>
+            </div>
+            <p class="panel-note">关闭 `mock` 后请使用可访问的 URL。</p>
+          </article>
+        </aside>
+
+        <section class="mainpane">
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 03</p>
+                <h2>图片 Prompt 配置</h2>
+                <p class="panel-note">直接保存到本地。</p>
+              </div>
+              <div class="section-actions">
+                <button id="reloadImagePromptConfigBtn" class="btn btn-ghost">读取</button>
+                <button id="saveImagePromptConfigBtn" class="btn btn-primary">保存</button>
+              </div>
+            </div>
+            <div class="config-path">
+              <span>配置文件</span>
+              <code id="imagePromptConfigPath">加载中...</code>
+            </div>
+            <div class="prompt-grid">
+              <label class="prompt-field">
+                <span>System Prompt</span>
+                <textarea id="imageSystemPrompt" class="textarea" spellcheck="false"></textarea>
+              </label>
+              <label class="prompt-field">
+                <span>User Prompt</span>
+                <textarea id="imageUserPrompt" class="textarea" spellcheck="false"></textarea>
+              </label>
+            </div>
+          </article>
+
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 04</p>
+                <h2>运行与进度</h2>
+              </div>
+              <div class="section-actions">
+                <button id="reloadImageFilesBtn" class="btn btn-ghost">刷新文件</button>
+                <button id="startImageBtn" class="btn btn-primary">开始</button>
+              </div>
+            </div>
+            <div class="progress-shell">
+              <div class="progress-track"><div id="imageProgressBar" class="progress-fill"></div></div>
+              <div class="progress-copy">
+                <strong id="imageProgressText">等待</strong>
+                <span id="imageProgressDetail">这里显示进度。</span>
+              </div>
+            </div>
+          </article>
+
+          <div class="content-grid">
+            <article class="card panel">
+              <div class="section-header">
+                <div>
+                  <p class="panel-kicker">Live</p>
+                  <h2>日志</h2>
+                </div>
+                <button id="refreshImageJobBtn" class="btn btn-ghost">刷新</button>
+              </div>
+              <pre id="imageLogBox" class="log-box">暂无日志</pre>
+            </article>
+
+            <article class="card panel">
+              <div class="section-header">
+                <div>
+                  <p class="panel-kicker">Output</p>
+                  <h2>结果文件</h2>
+                </div>
+                <button id="openImageOutputBtn" class="btn btn-ghost">打开目录</button>
+              </div>
+              <div id="imageOutputList" class="output-list empty">结果将在这里显示</div>
+            </article>
+          </div>
+        </section>
+      </section>
+    </section>
+
+      <section id="imageEditView" class="prompt-module-panel" hidden>
+      <section class="stats-grid">
+        <article class="stat card">
+          <span>图片</span>
+          <strong id="imageEditSelectedCount">0</strong>
+          <small>已选</small>
+        </article>
+        <article class="stat card">
+          <span>状态</span>
+          <strong id="imageEditStatusBadge">待开始</strong>
+          <small id="imageEditJobMeta">未运行</small>
+        </article>
+        <article class="stat card">
+          <span>结果</span>
+          <strong id="imageEditResultCount">0</strong>
+          <small>文件</small>
+        </article>
+        <article class="stat card">
+          <span>输出目录</span>
+          <strong id="imageEditOutputRootValue">未设置</strong>
+          <small>图生图</small>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <aside class="sidebar">
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 01</p>
+                <h2>选择图片</h2>
+              </div>
+              <span class="chip">拖拽 / 文件夹</span>
+            </div>
+            <label class="dropzone" id="imageEditDropzone">
+              <input id="imageEditInput" type="file" accept="image/*" multiple webkitdirectory directory mozdirectory />
+              <strong>选择或拖入图片</strong>
+              <span>JPG / PNG / WEBP，支持文件夹。</span>
+            </label>
+            <div id="imageEditFileList" class="stack-list empty">未选择图片</div>
+            <label class="prompt-field">
+              <span>图片源目录（本地文件生成完整路径时使用）</span>
+              <input id="imageEditSourceRootDir" class="input" type="text" placeholder="D:\media\image_edit 或 /data/image_edit" />
+            </label>
+            <label class="prompt-field">
+              <span>图片 URL（每行一条，可写 `文件名 | URL`）</span>
+              <textarea id="imageEditUrlInput" class="textarea" spellcheck="false" placeholder="demo.png | https://example.com/demo.png&#10;https://example.com/another-image.jpg"></textarea>
+            </label>
+            <div class="toggle-row">
+              <label class="toggle"><input data-path-style-group="imageEdit" type="checkbox" checked /> 使用 Linux 路径模式（支持 `/data/...`、`/home/...` 绝对路径）</label>
+            </div>
+            <p class="panel-note">选择文件夹时会优先用“源目录 + 相对路径”生成 CSV 完整路径；拖拽散文件时会回退为“源目录 + 文件名”。</p>
+          </article>
+
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 02</p>
+                <h2>API 配置</h2>
+                <p class="panel-note">保存后下次自动读取。</p>
+              </div>
+              <div class="section-actions">
+                <span class="chip chip-soft" id="imageEditModeBadge">Mock</span>
+                <button id="reloadImageEditApiConfigBtn" class="btn btn-ghost">读取</button>
+                <button id="saveImageEditApiConfigBtn" class="btn btn-primary">保存</button>
+              </div>
+            </div>
+            <div class="config-path">
+              <span>API 配置文件</span>
+              <code id="imageEditApiConfigPath">加载中...</code>
+            </div>
+            <div class="form-grid">
+              <label>
+                <span>API Key</span>
+                <input id="imageEditApiKey" class="input" type="password" placeholder="sk-..." />
+              </label>
+              <label>
+                <span>Base URL</span>
+                <input id="imageEditBaseUrl" class="input" type="text" placeholder="https://api.example.com/v1" />
+              </label>
+              <label>
+                <span>Model</span>
+                <input id="imageEditModel" class="input" type="text" placeholder="Prompt" />
+              </label>
+              <label>
+                <span>输出目录</span>
+                <input id="imageEditOutputDir" class="input" type="text" placeholder="D:\outputs\image_edit_prompts" />
+              </label>
+            </div>
+            <div class="toggle-row">
+              <label class="toggle"><input id="imageEditLinuxPathEnabled" data-path-style-group="imageEdit" type="checkbox" checked /> 使用 Linux 路径模式（支持 `/data/...`、`/home/...` 绝对路径）</label>
+              <label class="toggle"><input id="imageEditUseMock" type="checkbox" checked /> 无 Key 时启用 mock</label>
+              <label class="toggle"><input id="imageEditOverwrite" type="checkbox" /> 覆盖已有结果</label>
+            </div>
+            <p class="panel-note">关闭 `mock` 后请使用可访问的 URL。</p>
+          </article>
+        </aside>
+
+        <section class="mainpane">
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 03</p>
+                <h2>图生图 Prompt 配置</h2>
+                <p class="panel-note">直接保存到本地。</p>
+              </div>
+              <div class="section-actions">
+                <button id="reloadImageEditPromptConfigBtn" class="btn btn-ghost">读取</button>
+                <button id="saveImageEditPromptConfigBtn" class="btn btn-primary">保存</button>
+              </div>
+            </div>
+            <div class="config-path">
+              <span>配置文件</span>
+              <code id="imageEditPromptConfigPath">加载中...</code>
+            </div>
+            <div class="prompt-grid">
+              <label class="prompt-field">
+                <span>System Prompt</span>
+                <textarea id="imageEditSystemPrompt" class="textarea" spellcheck="false"></textarea>
+              </label>
+              <label class="prompt-field">
+                <span>User Prompt</span>
+                <textarea id="imageEditUserPrompt" class="textarea" spellcheck="false"></textarea>
+              </label>
+            </div>
+          </article>
+
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 04</p>
+                <h2>运行与进度</h2>
+              </div>
+              <div class="section-actions">
+                <button id="reloadImageEditFilesBtn" class="btn btn-ghost">刷新文件</button>
+                <button id="startImageEditBtn" class="btn btn-primary">开始</button>
+              </div>
+            </div>
+            <div class="progress-shell">
+              <div class="progress-track"><div id="imageEditProgressBar" class="progress-fill"></div></div>
+              <div class="progress-copy">
+                <strong id="imageEditProgressText">等待</strong>
+                <span id="imageEditProgressDetail">这里显示进度。</span>
+              </div>
+            </div>
+          </article>
+
+          <div class="content-grid">
+            <article class="card panel">
+              <div class="section-header">
+                <div>
+                  <p class="panel-kicker">Live</p>
+                  <h2>日志</h2>
+                </div>
+                <button id="refreshImageEditJobBtn" class="btn btn-ghost">刷新</button>
+              </div>
+              <pre id="imageEditLogBox" class="log-box">暂无日志</pre>
+            </article>
+
+            <article class="card panel">
+              <div class="section-header">
+                <div>
+                  <p class="panel-kicker">Output</p>
+                  <h2>结果文件</h2>
+                </div>
+                <button id="openImageEditOutputBtn" class="btn btn-ghost">打开目录</button>
+              </div>
+              <div id="imageEditOutputList" class="output-list empty">结果将在这里显示</div>
+            </article>
+          </div>
+        </section>
+      </section>
+    </section>
+
+      <section id="videoView" class="prompt-module-panel" hidden>
+      <section class="stats-grid">
+        <article class="stat card">
+          <span>视频</span>
+          <strong id="videoSelectedCount">0</strong>
+          <small>已选</small>
+        </article>
+        <article class="stat card">
+          <span>参考图</span>
+          <strong id="referenceSelectedCount">0</strong>
+          <small>已选</small>
+        </article>
+        <article class="stat card">
+          <span>匹配</span>
+          <strong id="videoMatchBadge">未扫描</strong>
+          <small id="videoMatchMeta">待扫描</small>
+        </article>
+        <article class="stat card">
+          <span>结果</span>
+          <strong id="videoResultCount">0</strong>
+          <small>文件</small>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <aside class="sidebar">
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 01</p>
+                <h2>视频目录</h2>
+              </div>
+              <span class="chip">同名匹配</span>
+            </div>
+            <label class="dropzone" id="videoDropzone">
+              <input id="videoInput" type="file" accept="video/*,.mp4,.mov,.avi,.mkv,.webm" multiple webkitdirectory directory mozdirectory />
+              <strong>选择视频目录</strong>
+              <span>MP4 / MOV / AVI / MKV / WEBM。</span>
+            </label>
+            <div id="videoFileList" class="stack-list empty">未选择视频</div>
+            <label class="prompt-field">
+              <span>视频源目录（本地文件生成完整路径时使用）</span>
+              <input id="videoSourceRootDir" class="input" type="text" placeholder="D:\media\videos 或 /data/videos" />
+            </label>
+            <label class="prompt-field">
+              <span>视频 URL（每行一条，可写 `文件名 | URL`）</span>
+              <textarea id="videoUrlInput" class="textarea" spellcheck="false" placeholder="a001.mp4 | https://example.com/a001.mp4&#10;https://example.com/a002.mov"></textarea>
+            </label>
+            <div class="toggle-row">
+              <label class="toggle"><input data-path-style-group="video" type="checkbox" checked /> 使用 Linux 路径模式（支持 `/data/...`、`/home/...` 绝对路径）</label>
+            </div>
+          </article>
+
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 02</p>
+                <h2>参考图目录</h2>
+              </div>
+              <span class="chip chip-soft">a001 / a001_1 / a001_2</span>
+            </div>
+            <label class="dropzone" id="referenceDropzone">
+              <input id="referenceInput" type="file" accept="image/*" multiple webkitdirectory directory mozdirectory />
+              <strong>选择参考图目录</strong>
+              <span>JPG / PNG / WEBP，按同名规则配对。</span>
+            </label>
+            <div id="referenceFileList" class="stack-list empty">未选择参考图</div>
+            <label class="prompt-field">
+              <span>参考图源目录（本地文件生成完整路径时使用）</span>
+              <input id="referenceSourceRootDir" class="input" type="text" placeholder="D:\media\references 或 /data/references" />
+            </label>
+            <label class="prompt-field">
+              <span>参考图 URL（每行一条，可写 `文件名 | URL`）</span>
+              <textarea id="referenceUrlInput" class="textarea" spellcheck="false" placeholder="a001.png | https://example.com/a001.png&#10;a001_1.png | https://example.com/a001_1.png"></textarea>
+            </label>
+            <div class="toggle-row">
+              <label class="toggle"><input data-path-style-group="video" type="checkbox" checked /> 使用 Linux 路径模式（支持 `/data/...`、`/home/...` 绝对路径）</label>
+            </div>
+            <p class="panel-note">选择文件夹时会优先用“源目录 + 相对路径”生成 CSV 完整路径；拖拽散文件时会回退为“源目录 + 文件名”。</p>
+          </article>
+
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 03</p>
+                <h2>匹配规则</h2>
+              </div>
+              <button id="scanVideoMatchBtn" class="btn btn-primary">扫描</button>
+            </div>
+            <div class="rule-box">
+              <p>`a001.mp4` -> `a001.*` / `a001_1.*` / `a001_2.*`</p>
+              <p>同槽位多文件会标记冲突。</p>
+            </div>
+          </article>
+
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 04</p>
+                <h2>API 配置</h2>
+                <p class="panel-note">保存后下次自动读取。</p>
+              </div>
+              <div class="section-actions">
+                <span class="chip chip-soft" id="videoModeBadge">Mock</span>
+                <button id="reloadVideoApiConfigBtn" class="btn btn-ghost">读取</button>
+                <button id="saveVideoApiConfigBtn" class="btn btn-primary">保存</button>
+              </div>
+            </div>
+            <div class="config-path">
+              <span>API 配置文件</span>
+              <code id="videoApiConfigPath">加载中...</code>
+            </div>
+            <div class="form-grid">
+              <label>
+                <span>API Key</span>
+                <input id="videoApiKey" class="input" type="password" placeholder="sk-..." />
+              </label>
+              <label>
+                <span>Base URL</span>
+                <input id="videoBaseUrl" class="input" type="text" placeholder="https://api.example.com/v1" />
+              </label>
+              <label>
+                <span>Model</span>
+                <input id="videoModel" class="input" type="text" placeholder="Prompt" />
+              </label>
+              <label>
+                <span>输出目录</span>
+                <input id="videoOutputDir" class="input" type="text" placeholder="D:\outputs\video_prompts" />
+              </label>
+            </div>
+            <div class="toggle-row">
+              <label class="toggle"><input id="videoLinuxPathEnabled" data-path-style-group="video" type="checkbox" checked /> 使用 Linux 路径模式（支持 `/data/...`、`/home/...` 绝对路径）</label>
+              <label class="toggle"><input id="videoUseMock" type="checkbox" checked /> 无 Key 时启用 mock</label>
+              <label class="toggle"><input id="videoOverwrite" type="checkbox" /> 覆盖已有结果</label>
+            </div>
+            <p class="panel-note">关闭 `mock` 后请使用可访问的 URL。</p>
+          </article>
+        </aside>
+
+        <section class="mainpane">
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 05</p>
+                <h2>视频 Prompt 配置</h2>
+                <p class="panel-note">直接保存到本地。</p>
+              </div>
+              <div class="section-actions">
+                <button id="reloadVideoPromptConfigBtn" class="btn btn-ghost">读取</button>
+                <button id="saveVideoPromptConfigBtn" class="btn btn-primary">保存</button>
+              </div>
+            </div>
+            <div class="config-path">
+              <span>配置文件</span>
+              <code id="videoPromptConfigPath">加载中...</code>
+            </div>
+            <div class="prompt-grid">
+              <label class="prompt-field">
+                <span>System Prompt</span>
+                <textarea id="videoSystemPrompt" class="textarea" spellcheck="false"></textarea>
+              </label>
+              <label class="prompt-field">
+                <span>User Prompt</span>
+                <textarea id="videoUserPrompt" class="textarea" spellcheck="false"></textarea>
+              </label>
+            </div>
+          </article>
+
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 06</p>
+                <h2>匹配预览</h2>
+                <p class="panel-note">确认后再生成。</p>
+              </div>
+            </div>
+            <div class="match-summary" id="videoMatchSummary">
+              <span class="chip">总数 0</span>
+              <span class="chip">成功 0</span>
+              <span class="chip">部分匹配 0</span>
+              <span class="chip">缺失 0</span>
+              <span class="chip">冲突 0</span>
+            </div>
+            <div id="videoMatchTable" class="table-card empty">扫描后显示结果</div>
+          </article>
+
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 07</p>
+                <h2>运行与进度</h2>
+              </div>
+              <div class="section-actions">
+                <button id="reloadVideoFilesBtn" class="btn btn-ghost">刷新文件</button>
+                <button id="startVideoBtn" class="btn btn-primary">开始</button>
+              </div>
+            </div>
+            <div class="progress-shell">
+              <div class="progress-track"><div id="videoProgressBar" class="progress-fill"></div></div>
+              <div class="progress-copy">
+                <strong id="videoProgressText">等待</strong>
+                <span id="videoProgressDetail">这里显示进度。</span>
+              </div>
+            </div>
+          </article>
+
+          <div class="content-grid">
+            <article class="card panel">
+              <div class="section-header">
+                <div>
+                  <p class="panel-kicker">Live</p>
+                  <h2>日志</h2>
+                </div>
+                <button id="refreshVideoJobBtn" class="btn btn-ghost">刷新</button>
+              </div>
+              <pre id="videoLogBox" class="log-box">暂无日志</pre>
+            </article>
+
+            <article class="card panel">
+              <div class="section-header">
+                <div>
+                  <p class="panel-kicker">Output</p>
+                  <h2>结果文件</h2>
+                </div>
+                <button id="openVideoOutputBtn" class="btn btn-ghost">打开目录</button>
+              </div>
+              <div id="videoOutputList" class="output-list empty">结果将在这里显示</div>
+            </article>
+          </div>
+        </section>
+      </section>
+      </section>
+    </section>
+
+    <section id="clipStudioView" class="view" hidden>
+      <section class="stats-grid">
+        <article class="stat card">
+          <span>预设</span>
+          <strong id="clipPresetBadge">未选择</strong>
+          <small id="clipPresetMeta">待选择</small>
+        </article>
+        <article class="stat card">
+          <span>输入视频</span>
+          <strong id="clipInputCount">0</strong>
+          <small id="clipInputMeta">待扫描</small>
+        </article>
+        <article class="stat card">
+          <span>状态</span>
+          <strong id="clipStatusBadge">待开始</strong>
+          <small id="clipJobMeta">未运行</small>
+        </article>
+        <article class="stat card">
+          <span>结果</span>
+          <strong id="clipResultCount">0</strong>
+          <small id="clipOutputRootValue">未设置输出目录</small>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <aside class="sidebar">
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 01</p>
+                <h2>处理模式</h2>
+              </div>
+              <span class="chip chip-soft">batch_editing</span>
+            </div>
+            <div class="segmented-row">
+              <button id="clipSingleModeBtn" type="button" class="btn btn-primary" data-clip-mode="single">单文件夹裁切</button>
+              <button id="clipMergeModeBtn" type="button" class="btn btn-ghost" data-clip-mode="merge">双文件夹合并</button>
+            </div>
+            <p id="clipModeDescription" class="panel-note">单目录批量裁切。</p>
+          </article>
+
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 02</p>
+                <h2>剪辑预设</h2>
+              </div>
+            </div>
+            <label class="prompt-field">
+              <span>批处理预设</span>
+              <select id="clipPresetSelect" class="input"></select>
+            </label>
+            <div id="clipPresetDescription" class="rule-box">加载预设中...</div>
+          </article>
+
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 03</p>
+                <h2>输入路径</h2>
+              </div>
+            </div>
+            <label id="clipSingleInputField" class="prompt-field">
+              <span>视频输入文件夹</span>
+              <input id="clipInputDir" class="input" type="text" placeholder="D:\videos\input_videos" />
+            </label>
+            <div id="clipMergeInputFields" hidden>
+              <label class="prompt-field">
+                <span>文件夹 A</span>
+                <input id="clipInputDirA" class="input" type="text" placeholder="D:\videos\input_folder_a" />
+              </label>
+              <label class="prompt-field">
+                <span>文件夹 B</span>
+                <input id="clipInputDirB" class="input" type="text" placeholder="D:\videos\input_folder_b" />
+              </label>
+            </div>
+            <div class="toggle-row">
+              <label class="toggle"><input data-path-style-group="clip" type="checkbox" checked /> 使用 Linux 路径模式（支持 `/data/...`、`/home/...` 绝对路径）</label>
+            </div>
+            <p class="panel-note">后端直接读取本地目录。</p>
+          </article>
+
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 04</p>
+                <h2>输出目录</h2>
+              </div>
+            </div>
+            <label class="prompt-field">
+              <span>结果根目录</span>
+              <input id="clipOutputDir" class="input" type="text" placeholder="output\video_clip" />
+            </label>
+            <div class="toggle-row">
+              <label class="toggle"><input id="clipLinuxPathEnabled" data-path-style-group="clip" type="checkbox" checked /> 使用 Linux 路径模式（支持 `/data/...`、`/home/...` 绝对路径）</label>
+            </div>
+            <p class="panel-note">每次运行都会新建目录。</p>
+          </article>
+        </aside>
+
+        <section class="mainpane">
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 05</p>
+                <h2>运行与进度</h2>
+              </div>
+              <div class="section-actions">
+                <button id="refreshClipJobBtn" class="btn btn-ghost">刷新</button>
+                <button id="openClipOutputBtn" class="btn btn-ghost">打开目录</button>
+                <button id="startClipBtn" class="btn btn-primary">开始</button>
+              </div>
+            </div>
+            <div class="progress-shell">
+              <div class="progress-track"><div id="clipProgressBar" class="progress-fill"></div></div>
+              <div class="progress-copy">
+                <strong id="clipProgressText">等待</strong>
+                <span id="clipProgressDetail">这里显示进度。</span>
+              </div>
+            </div>
+          </article>
+
+          <div class="content-grid">
+            <article class="card panel">
+              <div class="section-header">
+                <div>
+                  <p class="panel-kicker">Live</p>
+                  <h2>日志</h2>
+                </div>
+              </div>
+              <pre id="clipLogBox" class="log-box">暂无日志</pre>
+            </article>
+
+            <article class="card panel">
+              <div class="section-header">
+                <div>
+                  <p class="panel-kicker">Output</p>
+                  <h2>剪辑结果</h2>
+                </div>
+              </div>
+              <div id="clipOutputList" class="output-list empty">结果将在这里显示</div>
+            </article>
+          </div>
+        </section>
+      </section>
+    </section>
+
+    <section id="comfyStudioView" class="view" hidden>
+      <section class="stats-grid">
+        <article class="stat card">
+          <span>服务</span>
+          <strong id="comfyServerBadge">未知</strong>
+          <small id="comfyServerMeta">待检查</small>
+        </article>
+        <article class="stat card">
+          <span>模板</span>
+          <strong id="comfyTemplateCount">0</strong>
+          <small id="comfyTemplateMeta">未加载</small>
+        </article>
+        <article class="stat card">
+          <span>状态</span>
+          <strong id="comfyStatusBadge">待开始</strong>
+          <small id="comfyJobMeta">未运行</small>
+        </article>
+        <article class="stat card">
+          <span>结果</span>
+          <strong id="comfyResultCount">0</strong>
+          <small id="comfyOutputRootValue">未设置</small>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <aside class="sidebar">
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 01</p>
+                <h2>服务配置</h2>
+                <p class="panel-note">连接本机 ComfyUI Server。</p>
+              </div>
+              <div class="section-actions">
+                <button id="checkComfyHealthBtn" class="btn btn-ghost">检查</button>
+                <button id="reloadComfyConfigBtn" class="btn btn-ghost">读取</button>
+                <button id="saveComfyConfigBtn" class="btn btn-primary">保存</button>
+              </div>
+            </div>
+            <div class="config-path">
+              <span>配置文件</span>
+              <code id="comfyConfigPath">加载中...</code>
+            </div>
+            <div class="form-grid">
+              <label>
+                <span>Comfy Base URL</span>
+                <input id="comfyBaseUrl" class="input" type="text" placeholder="http://127.0.0.1:8188" />
+              </label>
+              <label>
+                <span>Comfy Root Dir</span>
+                <input id="comfyRootDir" class="input" type="text" placeholder="C:/ComfyUI" />
+              </label>
+              <label>
+                <span>Comfy Input Dir</span>
+                <input id="comfyInputDir" class="input" type="text" placeholder="C:/ComfyUI/input" />
+              </label>
+              <label>
+                <span>Comfy Output Dir</span>
+                <input id="comfyOutputDir" class="input" type="text" placeholder="C:/ComfyUI/output" />
+              </label>
+              <label>
+                <span>Temp Dir</span>
+                <input id="comfyTempDir" class="input" type="text" placeholder="output/comfy_temp" />
+              </label>
+              <label>
+                <span>Path Style</span>
+                <select id="comfyPathStyle" class="input">
+                  <option value="">自动</option>
+                  <option value="windows">windows</option>
+                </select>
+              </label>
+              <label>
+                <span>Request Timeout (s)</span>
+                <input id="comfyRequestTimeout" class="input" type="number" min="5" step="1" />
+              </label>
+              <label>
+                <span>Job Timeout (s)</span>
+                <input id="comfyJobTimeout" class="input" type="number" min="30" step="1" />
+              </label>
+              <label>
+                <span>Poll Interval (s)</span>
+                <input id="comfyPollInterval" class="input" type="number" min="1" step="1" />
+              </label>
+              <label>
+                <span>Workflow Dir</span>
+                <input id="comfyWorkflowManifestDir" class="input" type="text" placeholder="backend/comfyui_workflows" />
+              </label>
+            </div>
+            <div class="toggle-row">
+              <label class="toggle"><input id="comfyLinuxPathEnabled" data-path-style-group="comfy" type="checkbox" checked /> 使用 Linux 路径模式（支持 `/home/...`、`/mnt/...` 绝对路径）</label>
+              <label class="toggle"><input id="comfyWsEnabled" type="checkbox" checked /> 启用 WebSocket 监听</label>
+            </div>
+          </article>
+
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 02</p>
+                <h2>模板与任务参数</h2>
+              </div>
+              <button id="reloadComfyTemplatesBtn" class="btn btn-ghost">刷新模板</button>
+            </div>
+            <label class="prompt-field">
+              <span>模板</span>
+              <select id="comfyTemplateSelect" class="input"></select>
+            </label>
+            <div id="comfyTemplateDescription" class="rule-box">加载模板中...</div>
+            <div class="section-actions" style="margin-top: 0.75rem;">
+              <button id="applyComfyTemplateBindingsBtn" class="btn btn-ghost">载入模板 Bindings</button>
+            </div>
+            <pre id="comfyBindingsPreview" class="rule-box code-preview">模板 bindings 将显示在这里</pre>
+            <div class="form-grid" style="margin-top: 0.85rem;">
+              <label>
+                <span>Workflow Type</span>
+                <input id="comfyWorkflowType" class="input" type="text" placeholder="image_video_to_video" />
+              </label>
+              <label>
+                <span>默认 Seed（可选）</span>
+                <input id="comfyDefaultSeed" class="input" type="number" step="1" placeholder="123456" />
+              </label>
+              <label>
+                <span>默认输出前缀目录</span>
+                <input id="comfyOutputPrefix" class="input" type="text" placeholder="video/jobs/comfy_batch" />
+              </label>
+              <label>
+                <span>默认 Params JSON</span>
+                <input id="comfyParamsJson" class="input" type="text" placeholder='{"steps":20,"cfg":7,"denoise":0.6}' />
+              </label>
+            </div>
+          </article>
+
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 03</p>
+                <h2>CSV 批量导入</h2>
+              </div>
+              <span class="chip chip-soft">Prompt CSV -> ComfyUI</span>
+            </div>
+            <div class="form-grid">
+              <label>
+                <span>CSV 路径</span>
+                <input id="comfyCsvPath" class="input" type="text" placeholder="D:/AIGC/web_demo/output/.../prompts.csv" />
+              </label>
+              <label>
+                <span>图片根目录（可选）</span>
+                <input id="comfyImageRootDir" class="input" type="text" placeholder="D:/dataset/images" />
+              </label>
+              <label>
+                <span>视频根目录（可选）</span>
+                <input id="comfyVideoRootDir" class="input" type="text" placeholder="D:/dataset/videos" />
+              </label>
+            </div>
+            <div class="toggle-row">
+              <label class="toggle"><input data-path-style-group="comfy" type="checkbox" checked /> 使用 Linux 路径模式（支持 `/home/...`、`/mnt/...` 绝对路径）</label>
+            </div>
+            <p class="panel-note">CSV 推荐列：`image_path,video_path,positive_prompt,negative_prompt,seed,output_prefix,params_json`。如果只有 `image_name` / `video_name`，请同时填写对应根目录。</p>
+          </article>
+        </aside>
+
+        <section class="mainpane">
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 04</p>
+                <h2>高级工作流覆盖</h2>
+                <p class="panel-note">未填写时使用所选模板；填写后以后端内联 JSON 为准。</p>
+              </div>
+            </div>
+            <div class="prompt-grid">
+              <label class="prompt-field">
+                <span>Workflow JSON</span>
+                <textarea id="comfyWorkflowJson" class="textarea" spellcheck="false" placeholder='{"1":{"class_type":"..."}}'></textarea>
+              </label>
+              <label class="prompt-field">
+                <span>Bindings JSON</span>
+                <textarea id="comfyBindingsJson" class="textarea" spellcheck="false" placeholder='{"positive_prompt":[{"node":"10","input":"text"}]}'></textarea>
+              </label>
+            </div>
+          </article>
+
+          <article class="card panel">
+            <div class="section-header">
+              <div>
+                <p class="panel-kicker">Step 05</p>
+                <h2>运行与进度</h2>
+              </div>
+              <div class="section-actions">
+                <button id="cancelComfyJobBtn" class="btn btn-ghost">取消</button>
+                <button id="retryComfyJobBtn" class="btn btn-ghost">重试</button>
+                <button id="retryFailedComfyJobBtn" class="btn btn-ghost">仅重跑失败项</button>
+                <button id="resumePendingComfyJobBtn" class="btn btn-ghost">跳过已成功项续跑</button>
+                <button id="exportComfyFailuresBtn" class="btn btn-ghost">导出失败 CSV</button>
+                <button id="refreshComfyJobBtn" class="btn btn-ghost">刷新</button>
+                <button id="startComfyJobBtn" class="btn btn-primary">开始</button>
+              </div>
+            </div>
+            <div class="progress-shell">
+              <div class="progress-track"><div id="comfyProgressBar" class="progress-fill"></div></div>
+              <div class="progress-copy">
+                <strong id="comfyProgressText">等待</strong>
+                <span id="comfyProgressDetail">这里显示运行节点与回收状态。</span>
+              </div>
+            </div>
+          </article>
+
+          <div class="content-grid">
+            <article class="card panel">
+              <div class="section-header">
+                <div>
+                  <p class="panel-kicker">Live</p>
+                  <h2>日志</h2>
+                </div>
+              </div>
+              <pre id="comfyLogBox" class="log-box">暂无日志</pre>
+            </article>
+
+            <article class="card panel">
+              <div class="section-header">
+                <div>
+                  <p class="panel-kicker">Issues</p>
+                  <h2>失败详情</h2>
+                </div>
+              </div>
+              <div id="comfyFailureList" class="output-list empty">失败项会显示在这里</div>
+            </article>
+
+            <article class="card panel">
+              <div class="section-header">
+                <div>
+                  <p class="panel-kicker">Output</p>
+                  <h2>结果文件</h2>
+                </div>
+                <div class="section-actions">
+                  <button id="reloadComfyFilesBtn" class="btn btn-ghost">刷新文件</button>
+                  <button id="openComfyOutputBtn" class="btn btn-ghost">打开目录</button>
+                </div>
+              </div>
+              <div id="comfyOutputList" class="output-list empty">结果将在这里显示</div>
+            </article>
+          </div>
+        </section>
+      </section>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

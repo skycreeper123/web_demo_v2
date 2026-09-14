@@ -1,0 +1,13 @@
+{
+  "comfy_base_url": "http://127.0.0.1:8188",
+  "comfy_root_dir": "",
+  "comfy_input_dir": "",
+  "comfy_output_dir": "",
+  "temp_dir": "output/comfy_temp",
+  "path_style": "linux",
+  "request_timeout_sec": 30,
+  "job_timeout_sec": 1800,
+  "poll_interval_sec": 2,
+  "ws_enabled": true,
+  "workflow_manifest_dir": "workflow"
+}

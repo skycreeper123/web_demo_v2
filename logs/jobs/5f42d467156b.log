@@ -1,0 +1,12 @@
+2026-09-05 21:07:39,685 | INFO     | web_demo.job.5f42d467156b | Job created. kind=video total=1 log_file=D:\AIGC\web_demo\logs\jobs\5f42d467156b.log
+2026-09-05 21:07:39,686 | INFO     | web_demo.job.5f42d467156b | Starting video prompt job. items=1 output_root=D:\AIGC\web_demo\output
+2026-09-05 21:07:39,696 | INFO     | web_demo.job.5f42d467156b | Status changed: queued -> running
+2026-09-05 21:07:39,727 | INFO     | web_demo.job.5f42d467156b | Processing video: a001.mp4
+2026-09-05 21:07:39,737 | INFO     | web_demo.job.5f42d467156b | Source video staged: D:\AIGC\web_demo\output\20260905_210739_697\source_media\videos\a001.mp4
+2026-09-05 21:07:39,747 | INFO     | web_demo.job.5f42d467156b | Main reference staged: D:\AIGC\web_demo\output\20260905_210739_697\source_media\references\a001.jpg
+2026-09-05 21:07:41,798 | ERROR    | web_demo.job.5f42d467156b | Failed: a001.mp4 -> Network error: [WinError 10061] 由于目标计算机积极拒绝，无法连接。
+2026-09-05 21:07:41,824 | INFO     | web_demo.job.5f42d467156b | Status changed: running -> failed
+2026-09-05 21:07:41,824 | ERROR    | web_demo.job.5f42d467156b | Job error: Network error: [WinError 10061] 由于目标计算机积极拒绝，无法连接。
+2026-09-05 21:07:41,825 | INFO     | web_demo.job.5f42d467156b | Output directory: D:\AIGC\web_demo\output\20260905_210739_697
+2026-09-05 21:07:41,832 | WARNING  | web_demo.job.5f42d467156b | Failed items: 1
+2026-09-05 21:07:41,840 | INFO     | web_demo.job.5f42d467156b | Done. Output: D:\AIGC\web_demo\output\20260905_210739_697
