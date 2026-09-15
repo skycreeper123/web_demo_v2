@@ -730,3 +730,12 @@
 2026-09-05 21:08:12,511 | INFO     | web_demo.http | 127.0.0.1:57393 - "POST /api/browser-session/heartbeat HTTP/1.1" 200 -
 2026-09-05 21:08:17,797 | INFO     | web_demo.http | 127.0.0.1:51841 - "POST /api/browser-session/heartbeat HTTP/1.1" 200 -
 2026-09-05 21:08:22,799 | INFO     | web_demo.http | 127.0.0.1:57341 - "POST /api/browser-session/heartbeat HTTP/1.1" 200 -
+2026-09-14 18:37:43,794 | INFO     | web_demo.app | Logging initialized. log_dir=D:\AIGC\web_demo_v2\logs
+2026-09-14 18:37:43,794 | CRITICAL | web_demo.crash | Unhandled top-level exception
+Traceback (most recent call last):
+  File "C:\Users\but48\.codex\visualizations\2026\09\14\01a09eee-cdfb-7091-a4af-d53cfef7305f\verify_smoke.py", line 48, in <module>
+    logger = logging.getLogger("web_demo.comfy.http")
+             ^^^^^^^
+NameError: name 'logging' is not defined. Did you forget to import 'logging'
+2026-09-14 18:37:58,589 | INFO     | web_demo.app | Logging initialized. log_dir=D:\AIGC\web_demo_v2\logs
+2026-09-14 19:09:11,818 | INFO     | web_demo.app | Logging initialized. log_dir=D:\AIGC\web_demo_v2\logs

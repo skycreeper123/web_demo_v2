@@ -10,6 +10,7 @@ import subprocess
 import sys
 import threading
 import time
+import types
 import uuid
 from dataclasses import asdict, dataclass, field
 from http import HTTPStatus
@@ -18,8 +19,28 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import unquote, urlparse
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _register_web_demo_alias() -> None:
+    # The project folder may not be named "web_demo" (e.g. web_demo_v2), and a
+    # same-named folder elsewhere on sys.path would silently shadow this copy.
+    # Force "web_demo" to resolve to this project no matter how it is started.
+    package_alias = types.ModuleType("web_demo")
+    package_alias.__path__ = [str(_PROJECT_ROOT)]
+    package_alias.__file__ = str(_PROJECT_ROOT / "__init__.py")
+    for name in [n for n in sys.modules if n == "web_demo" or n.startswith("web_demo.")]:
+        del sys.modules[name]
+    sys.modules["web_demo"] = package_alias
+
+
 if __package__ is None or __package__ == "":
-    sys.path.append(str(Path(__file__).resolve().parents[3]))
+    _register_web_demo_alias()
+else:
+    _existing = sys.modules.get("web_demo")
+    _existing_file = str(getattr(_existing, "__file__", "") or "")
+    if not _existing_file or Path(_existing_file).resolve().parent != _PROJECT_ROOT:
+        _register_web_demo_alias()
 
 from web_demo.backend.app.core.config import (  # noqa: E402
     IMAGE_PROMPT_KIND,

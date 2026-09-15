@@ -41,6 +41,17 @@ def _parse_params_json(text: str | None) -> dict[str, Any]:
     return value
 
 
+def _format_bytes(size: Any) -> str:
+    value = float(size or 0)
+    if value < 1024:
+        return f"{int(value)} B"
+    for unit in ("KB", "MB", "GB"):
+        value /= 1024
+        if value < 1024:
+            return f"{value:.1f} {unit}"
+    return f"{value:.1f} TB"
+
+
 def _load_csv_rows(csv_path: str, *, path_style: str = "") -> list[dict[str, str]]:
     path = Path(csv_path)
     if not is_absolute_path_text(csv_path, path_style):
@@ -293,6 +304,17 @@ def run_comfy_job(
             progress(current_index, total_rows)
             continue
 
+        if staged_inputs.get("image_ref"):
+            log(
+                f"[{current_index}/{total_rows}] Staged image: {staged_inputs.get('image_source')} -> "
+                f"{staged_inputs['image_ref']} ({_format_bytes(staged_inputs.get('image_bytes'))})"
+            )
+        if staged_inputs.get("video_ref"):
+            log(
+                f"[{current_index}/{total_rows}] Staged video: {staged_inputs.get('video_source')} -> "
+                f"{staged_inputs['video_ref']} ({_format_bytes(staged_inputs.get('video_bytes'))})"
+            )
+
         try:
             workflow = bind_workflow(
                 payload=row_payload,
@@ -362,11 +384,13 @@ def run_comfy_job(
             continue
 
         JOB_REGISTRY.attach_prompt(job_id, prompt_id)
+        JOB_REGISTRY.reset_progress(job_id)
         update_job(meta={"prompt_id": prompt_id, "current_row": row_index, "current_name": display_name})
         log(f"[{current_index}/{total_rows}] Submitted to ComfyUI. prompt_id={prompt_id}")
 
         deadline = time.time() + timeout_seconds
         last_node = ""
+        last_progress_percent = -1
         next_history_check = 0.0
         next_queue_check = 0.0
         row_completed = False
@@ -377,6 +401,28 @@ def run_comfy_job(
                 last_node = tracker.current_node
                 log(f"[{current_index}/{total_rows}] Running node: {tracker.current_node}")
                 update_job(meta={"current_node": tracker.current_node})
+
+            progress_max = int(tracker.progress_max or 0)
+            if progress_max > 0:
+                percent = min(100, int(tracker.progress_value * 100 / progress_max))
+                if percent != last_progress_percent and (
+                    last_progress_percent < 0
+                    or percent - last_progress_percent >= 10
+                    or percent >= 100
+                ):
+                    log(
+                        f"[{current_index}/{total_rows}] Node progress: "
+                        f"{tracker.current_node or last_node or '?'} "
+                        f"{int(tracker.progress_value)}/{progress_max} ({percent}%)"
+                    )
+                    update_job(
+                        meta={
+                            "node_progress_value": int(tracker.progress_value),
+                            "node_progress_max": progress_max,
+                            "node_progress_percent": percent,
+                        }
+                    )
+                    last_progress_percent = percent
 
             if tracker.cancel_requested and tracker.interrupted:
                 log("ComfyUI batch was interrupted.")

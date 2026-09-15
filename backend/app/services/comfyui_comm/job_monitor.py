@@ -70,6 +70,16 @@ class ComfyJobRegistry:
                 tracker.queue_remaining = queue_remaining
                 tracker.updated_at = time.time()
 
+    def reset_progress(self, job_id: str) -> None:
+        # 新一行提交前清空上一行残留的节点与步数，避免日志读到旧值。
+        with self._lock:
+            tracker = self._by_job_id.get(job_id)
+            if tracker:
+                tracker.current_node = ""
+                tracker.progress_value = 0
+                tracker.progress_max = 0
+                tracker.updated_at = time.time()
+
     def handle_message(self, message: dict[str, Any]) -> None:
         message_type = str(message.get("type") or "").strip()
         data = message.get("data") if isinstance(message.get("data"), dict) else {}
@@ -102,12 +112,19 @@ class ComfyJobRegistry:
                 if node is None:
                     tracker.execution_finished = True
                 else:
+                    node_text = str(node)
+                    if node_text != tracker.current_node:
+                        tracker.progress_value = 0
+                        tracker.progress_max = 0
                     tracker.state = "RUNNING"
-                    tracker.current_node = str(node)
+                    tracker.current_node = node_text
             elif message_type == "progress":
                 tracker.state = "RUNNING"
                 tracker.progress_value = int(data.get("value") or 0)
                 tracker.progress_max = int(data.get("max") or 0)
+                progress_node = data.get("node")
+                if progress_node:
+                    tracker.current_node = str(progress_node)
             elif message_type == "execution_success":
                 tracker.execution_finished = True
                 tracker.execution_success = True
@@ -278,4 +295,3 @@ class ComfyWebSocketManager:
             masking_key = os.urandom(4)
             masked_payload = bytes(byte ^ masking_key[index % 4] for index, byte in enumerate(payload))
             sock.sendall(bytes(header) + masking_key + masked_payload)
-

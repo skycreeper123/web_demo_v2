@@ -1,2 +1,8 @@
 2026-09-05 21:07:41,798 | ERROR    | web_demo.job.5f42d467156b | Failed: a001.mp4 -> Network error: [WinError 10061] 由于目标计算机积极拒绝，无法连接。
 2026-09-05 21:07:41,824 | ERROR    | web_demo.job.5f42d467156b | Job error: Network error: [WinError 10061] 由于目标计算机积极拒绝，无法连接。
+2026-09-14 18:37:43,794 | CRITICAL | web_demo.crash | Unhandled top-level exception
+Traceback (most recent call last):
+  File "C:\Users\but48\.codex\visualizations\2026\09\14\01a09eee-cdfb-7091-a4af-d53cfef7305f\verify_smoke.py", line 48, in <module>
+    logger = logging.getLogger("web_demo.comfy.http")
+             ^^^^^^^
+NameError: name 'logging' is not defined. Did you forget to import 'logging'

@@ -1144,7 +1144,9 @@ function renderComfyJob(job) {
   } else if (job.status === "timeout") {
     els.comfyProgressDetail.textContent = "任务超时";
   } else if (meta.current_node) {
-    els.comfyProgressDetail.textContent = `当前节点：${meta.current_node}`;
+    els.comfyProgressDetail.textContent = meta.node_progress_max
+      ? `当前节点：${meta.current_node}（${meta.node_progress_value}/${meta.node_progress_max} · ${meta.node_progress_percent || 0}%）`
+      : `当前节点：${meta.current_node}`;
   } else if (meta.queue_pending || meta.queue_running) {
     els.comfyProgressDetail.textContent = `队列：${meta.queue_pending || 0} 待执行 / ${meta.queue_running || 0} 运行中`;
   } else {

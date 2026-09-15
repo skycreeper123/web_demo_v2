@@ -18,6 +18,7 @@ class LoggingPaths:
     app_log: Path
     error_log: Path
     http_log: Path
+    comfy_http_log: Path
     jobs_dir: Path
 
 
@@ -58,6 +59,7 @@ def _build_paths(log_root: Path | None = None) -> LoggingPaths:
         app_log=root_dir / "app.log",
         error_log=root_dir / "error.log",
         http_log=root_dir / "http.log",
+        comfy_http_log=root_dir / "comfy_http.log",
         jobs_dir=jobs_dir,
     )
 
@@ -111,6 +113,13 @@ def setup_logging(log_root: Path | None = None) -> LoggingPaths:
         http_logger.handlers.clear()
         http_logger.propagate = True
         http_logger.addHandler(_new_rotating_file_handler(paths.http_log, logging.INFO))
+
+        # 出站到 ComfyUI 的 HTTP 请求走独立文件，避免轮询细节刷爆 app.log。
+        comfy_http_logger = logging.getLogger("web_demo.comfy.http")
+        comfy_http_logger.setLevel(logging.DEBUG)
+        comfy_http_logger.handlers.clear()
+        comfy_http_logger.propagate = False
+        comfy_http_logger.addHandler(_new_rotating_file_handler(paths.comfy_http_log, logging.DEBUG))
 
         _install_exception_hooks()
         _LOGGING_PATHS = paths

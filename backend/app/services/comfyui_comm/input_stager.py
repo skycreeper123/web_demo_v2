@@ -34,7 +34,11 @@ def stage_input_files(job_id: str, payload: dict[str, Any], config: dict[str, An
     staged: dict[str, Any] = {
         "job_input_dir": str(job_input_dir),
         "image_ref": "",
+        "image_source": "",
+        "image_bytes": 0,
         "video_ref": "",
+        "video_source": "",
+        "video_bytes": 0,
         "staged_files": [],
     }
 
@@ -45,6 +49,8 @@ def stage_input_files(job_id: str, payload: dict[str, Any], config: dict[str, An
         image_target = job_input_dir / image_name
         shutil.copy2(image_path, image_target)
         staged["image_ref"] = workflow_ref("jobs", job_id, image_name)
+        staged["image_source"] = str(image_path)
+        staged["image_bytes"] = image_target.stat().st_size
         staged["staged_files"].append(str(image_target))
 
     if video_path:
@@ -54,7 +60,8 @@ def stage_input_files(job_id: str, payload: dict[str, Any], config: dict[str, An
         video_target = job_input_dir / video_name
         shutil.copy2(video_path, video_target)
         staged["video_ref"] = workflow_ref("jobs", job_id, video_name)
+        staged["video_source"] = str(video_path)
+        staged["video_bytes"] = video_target.stat().st_size
         staged["staged_files"].append(str(video_target))
 
     return staged
-

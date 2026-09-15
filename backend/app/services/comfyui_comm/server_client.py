@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
+import time
 import urllib.error
 import urllib.request
 from typing import Any
 from urllib.parse import urljoin
+
+
+COMFY_HTTP_LOGGER = logging.getLogger("web_demo.comfy.http")
 
 
 class ComfyServerClient:
@@ -20,15 +25,38 @@ class ComfyServerClient:
             data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             headers["Content-Type"] = "application/json"
         request = urllib.request.Request(url, data=data, headers=headers, method=method.upper())
+        started_at = time.perf_counter()
+        status_code = 0
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                status_code = int(getattr(response, "status", 0) or 0)
                 raw = response.read()
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
+            COMFY_HTTP_LOGGER.error(
+                "%s %s -> HTTP %s (%.0f ms, request %d B): %s",
+                method.upper(), path, exc.code,
+                (time.perf_counter() - started_at) * 1000,
+                len(data) if data else 0,
+                detail[:500],
+            )
             raise RuntimeError(f"ComfyUI HTTP {exc.code}: {detail}") from exc
         except urllib.error.URLError as exc:
+            COMFY_HTTP_LOGGER.error(
+                "%s %s -> connection failed (%.0f ms): %s",
+                method.upper(), path,
+                (time.perf_counter() - started_at) * 1000,
+                exc.reason,
+            )
             raise RuntimeError(f"无法连接 ComfyUI：{exc.reason}") from exc
 
+        COMFY_HTTP_LOGGER.info(
+            "%s %s -> %s (%.0f ms, request %d B, response %d B)",
+            method.upper(), path, status_code,
+            (time.perf_counter() - started_at) * 1000,
+            len(data) if data else 0,
+            len(raw),
+        )
         if not raw:
             return {}
         text = raw.decode("utf-8", errors="replace")
@@ -63,6 +91,13 @@ class ComfyServerClient:
         value = self._request("POST", "/prompt", payload)
         if not isinstance(value, dict):
             raise RuntimeError("ComfyUI /prompt 返回了非 JSON 数据。")
+        returned_prompt_id = str(value.get("prompt_id") or "").strip()
+        if returned_prompt_id:
+            COMFY_HTTP_LOGGER.info(
+                "POST /prompt accepted prompt_id=%s nodes=%d",
+                returned_prompt_id,
+                len(workflow) if isinstance(workflow, dict) else 0,
+            )
         return value
 
     def post_interrupt(self) -> dict[str, Any]:
@@ -95,4 +130,3 @@ class ComfyServerClient:
             "queue_running": running,
             "system_stats": system_stats,
         }
-
