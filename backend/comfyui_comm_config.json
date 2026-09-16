@@ -9,5 +9,11 @@
   "job_timeout_sec": 1800,
   "poll_interval_sec": 2,
   "ws_enabled": true,
-  "workflow_manifest_dir": "workflow"
+  "workflow_manifest_dir": "workflow",
+  "csv_import": {
+    "csv_path": "root/Desktop/web_demo_v2/output/20260916_154824_430/prompt.csv",
+    "image_root_dir": "/root/Desktop/web_demo_v2/test_image/",
+    "video_root_dir": "/root/Desktop/web_demo_v2/test_video/",
+    "path_style": ""
+  }
 }
