@@ -222,11 +222,22 @@ def run_comfy_job(
     update_job: Callable[..., Any],
 ) -> dict[str, Any]:
     config = load_comfy_config()
+    saved_import = config.get("csv_import") if isinstance(config.get("csv_import"), dict) else {}
     timeout_seconds = int(config.get("job_timeout_sec") or 1800)
     poll_interval = max(1, int(config.get("poll_interval_sec") or 2))
-    path_style = normalize_path_style(payload.get("pathStyle") or config.get("path_style"))
+    path_style = normalize_path_style(payload.get("pathStyle") or saved_import.get("path_style") or config.get("path_style"))
     tracker = JOB_REGISTRY.register(job_id)
     client = ComfyServerClient(config)
+    saved_import = dict(saved_import)
+    effective_payload = {**saved_import, **payload}
+    for key, saved_key in (
+        ("csvPath", "csv_path"),
+        ("imageRootDir", "image_root_dir"),
+        ("videoRootDir", "video_root_dir"),
+    ):
+        if not str(payload.get(key) or "").strip():
+            effective_payload[key] = saved_import.get(saved_key) or ""
+    payload = effective_payload
     csv_path = str(payload.get("csvPath") or "").strip()
     if not csv_path:
         raise RuntimeError("请提供 CSV 文件路径。")

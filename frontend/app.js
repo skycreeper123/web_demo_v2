@@ -1715,6 +1715,12 @@ function getComfyConfigPayload() {
     poll_interval_sec: Number(els.comfyPollInterval.value || 2),
     ws_enabled: els.comfyWsEnabled.checked,
     workflow_manifest_dir: els.comfyWorkflowManifestDir.value.trim(),
+    csv_import: {
+      csv_path: els.comfyCsvPath.value.trim(),
+      image_root_dir: els.comfyImageRootDir.value.trim(),
+      video_root_dir: els.comfyVideoRootDir.value.trim(),
+      path_style: isPathStyleGroupChecked("comfy") ? "linux" : "",
+    },
   };
 }
 
@@ -1734,6 +1740,9 @@ function renderComfyConfig(data) {
   els.comfyPollInterval.value = String(data.config?.poll_interval_sec ?? 2);
   els.comfyWsEnabled.checked = data.config?.ws_enabled ?? true;
   els.comfyWorkflowManifestDir.value = normalizeDisplayPath(data.config?.workflow_manifest_dir || "");
+  els.comfyCsvPath.value = data.config?.csv_import?.csv_path || "";
+  els.comfyImageRootDir.value = data.config?.csv_import?.image_root_dir || "";
+  els.comfyVideoRootDir.value = data.config?.csv_import?.video_root_dir || "";
   els.comfyOutputRootValue.textContent = normalizeDisplayPath(els.comfyOutputDir.value.trim()) || "未设置";
 }
 
@@ -1798,12 +1807,13 @@ function parseComfyParamsJson() {
 
 function getComfyRunPayload() {
   const seedText = els.comfyDefaultSeed.value.trim();
+  const savedImport = state.comfy.config?.csv_import || {};
   return {
     templateKey: els.comfyTemplateSelect.value,
     workflowType: els.comfyWorkflowType.value.trim(),
-    csvPath: els.comfyCsvPath.value.trim(),
-    imageRootDir: els.comfyImageRootDir.value.trim(),
-    videoRootDir: els.comfyVideoRootDir.value.trim(),
+    csvPath: els.comfyCsvPath.value.trim() || savedImport.csv_path || "",
+    imageRootDir: els.comfyImageRootDir.value.trim() || savedImport.image_root_dir || "",
+    videoRootDir: els.comfyVideoRootDir.value.trim() || savedImport.video_root_dir || "",
     pathStyle: isPathStyleGroupChecked("comfy") ? "linux" : els.comfyPathStyle.value,
     defaultSeed: seedText ? Number(seedText) : null,
     defaultOutputPrefixBase: els.comfyOutputPrefix.value.trim(),

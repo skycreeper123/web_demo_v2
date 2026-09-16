@@ -667,6 +667,12 @@ def default_comfy_config() -> dict[str, Any]:
         "poll_interval_sec": 2,
         "ws_enabled": True,
         "workflow_manifest_dir": "workflow",
+        "csv_import": {
+            "csv_path": "",
+            "image_root_dir": "",
+            "video_root_dir": "",
+            "path_style": "",
+        },
     }
 
 
@@ -701,6 +707,13 @@ def _merge_comfy_config(config: dict[str, Any] | None) -> dict[str, Any]:
         except (TypeError, ValueError):
             merged[key] = defaults[key]
     merged["ws_enabled"] = bool(merged.get("ws_enabled", True))
+    import_config = merged.setdefault("csv_import", {})
+    if not isinstance(import_config, dict):
+        import_config = dict(defaults["csv_import"])
+        merged["csv_import"] = import_config
+    for key in ("csv_path", "image_root_dir", "video_root_dir"):
+        import_config[key] = _normalize_comfy_path_text(import_config.get(key))
+    import_config["path_style"] = normalize_path_style(import_config.get("path_style"))
     return merged
 
 
