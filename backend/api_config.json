@@ -1,8 +1,8 @@
 {
   "image": {
-    "api_key": "sk-VtXy0IelWIaGxPsAUTl0Y07rIk4g42A1XZbfKpUHImDTTjdS",
-    "base_url": "https://4sapi.com/v1",
-    "model": "gemini-3.6-flash",
+    "api_key": "sk-ws-H.PHPMLMM.On7N.MEYCIQDEWxRQ2CQmw8QnYG0d7BLOb5Rwg_njkuo8mmZGBgfWpQIhAJ04yEc1f2sNi7nhiVW7-Zt388w3XYsimfAxM6r5Cqmz",
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "model": "qwen3-vl-flash",
     "output_dir": "output",
     "source_root_dir": "",
     "path_style": "linux",
@@ -10,9 +10,9 @@
     "overwrite": false
   },
   "image_edit": {
-    "api_key": "sk-VtXy0IelWIaGxPsAUTl0Y07rIk4g42A1XZbfKpUHImDTTjdS",
-    "base_url": "https://4sapi.com/v1",
-    "model": "gemini-3.6-flash",
+    "api_key": "sk-ws-H.PHPMLMM.On7N.MEYCIQDEWxRQ2CQmw8QnYG0d7BLOb5Rwg_njkuo8mmZGBgfWpQIhAJ04yEc1f2sNi7nhiVW7-Zt388w3XYsimfAxM6r5Cqmz",
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "model": "qwen3-vl-flash",
     "output_dir": "output",
     "source_root_dir": "",
     "path_style": "linux",
@@ -20,9 +20,9 @@
     "overwrite": false
   },
   "video": {
-    "api_key": "sk-VtXy0IelWIaGxPsAUTl0Y07rIk4g42A1XZbfKpUHImDTTjdS",
-    "base_url": "https://4sapi.com/v1",
-    "model": "gemini-3.6-flash",
+    "api_key": "sk-ws-H.PHPMLMM.On7N.MEYCIQDEWxRQ2CQmw8QnYG0d7BLOb5Rwg_njkuo8mmZGBgfWpQIhAJ04yEc1f2sNi7nhiVW7-Zt388w3XYsimfAxM6r5Cqmz",
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "model": "qwen3-vl-flash",
     "output_dir": "output",
     "video_source_root_dir": "",
     "reference_source_root_dir": "",
