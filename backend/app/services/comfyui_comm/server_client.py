@@ -81,13 +81,11 @@ class ComfyServerClient:
         value = self._request("GET", f"/history/{prompt_id}")
         return value if isinstance(value, dict) else {}
 
-    def post_prompt(self, workflow: dict[str, Any], *, client_id: str, prompt_id: str | None = None) -> dict[str, Any]:
+    def post_prompt(self, workflow: dict[str, Any], *, client_id: str) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "prompt": workflow,
             "client_id": client_id,
         }
-        if prompt_id:
-            payload["prompt_id"] = prompt_id
         value = self._request("POST", "/prompt", payload)
         if not isinstance(value, dict):
             raise RuntimeError("ComfyUI /prompt 返回了非 JSON 数据。")

@@ -159,7 +159,7 @@
 ```json
 {
   "job_id": "job_20260818_0001",
-  "prompt_id": "job_20260818_0001",
+  "prompt_id": "6f1e1f53-3f7d-4c05-a0e2-f64d1a6b3f12",
   "status": "SUBMITTED"
 }
 ```
@@ -169,7 +169,7 @@
 ```json
 {
   "job_id": "job_20260818_0001",
-  "prompt_id": "job_20260818_0001",
+  "prompt_id": "6f1e1f53-3f7d-4c05-a0e2-f64d1a6b3f12",
   "status": "SUCCEEDED",
   "output_path": "/opt/ComfyUI/output/video/jobs/job_20260818_0001/result_00001.mp4",
   "metadata": {
@@ -180,7 +180,7 @@
 
 说明：
 
-- `prompt_id` 必须取自 `POST /prompt` 的实际响应结果；如果请求中主动传入了 `prompt_id`，模块也必须校验响应中的 `prompt_id` 是否与期望值一致
+- `prompt_id` 必须取自 `POST /prompt` 的实际响应结果；模块不应主动构造业务 ID 作为 `prompt_id`
 - 通信模块内部必须维护 `job_id -> prompt_id` 的稳定映射，不允许仅依赖文件命名规则反推
 - Windows 示例路径可写为 `C:/ComfyUI/output/video/jobs/job_20260818_0001/result_00001.mp4`
 - Linux 示例路径可写为 `/opt/ComfyUI/output/video/jobs/job_20260818_0001/result_00001.mp4`
@@ -346,7 +346,7 @@ freeMemory(request?: FreeMemoryRequest): Promise<void>
     "...": "API workflow JSON"
   },
   "client_id": "3f61c9c7-7a72-4f20-8f5b-3c2c7d0e3f12",
-  "prompt_id": "job_20260818_0001"
+  "6f1e1f53-3f7d-4c05-a0e2-f64d1a6b3f12"
 }
 ```
 
@@ -354,19 +354,19 @@ freeMemory(request?: FreeMemoryRequest): Promise<void>
 
 - `prompt`：API 格式工作流
 - `client_id`：通信模块对应的 WebSocket 客户端标识
-- `prompt_id`：可选；如使用，建议与业务 `job_id` 保持一致，便于排查与回溯
+- `prompt_id`：可选；如使用必须是标准 UUID。建议默认不传，由 Server 生成
 
 强制约束：
 
 - 不论请求体中是否传入 `prompt_id`，模块都必须以 `POST /prompt` 的响应结果作为最终 `prompt_id`
-- 如果请求体中传入了期望的 `prompt_id`，而响应中的 `prompt_id` 不一致，模块必须立即判定为提交异常并进入 `FAILED`
+- 如接口版本要求传入 `prompt_id`，必须使用标准 UUID；业务 `job_id` 只作为内部映射，不作为 Server 侧标识。
 - 提交成功后，模块必须立刻持久化或缓存 `job_id -> prompt_id -> client_id` 映射，供监听、取消、重试和结果查询复用
 
 成功响应示例：
 
 ```json
 {
-  "prompt_id": "job_20260818_0001",
+  "prompt_id": "6f1e1f53-3f7d-4c05-a0e2-f64d1a6b3f12",
   "number": 42
 }
 ```
@@ -762,7 +762,7 @@ Linux：
 - 输入文件不存在
 - 工作流模板缺失
 - ComfyUI 服务未启动
-- 请求中显式传入 `prompt_id` 且与响应不一致
+- 请求中显式传入非法 `prompt_id` 且 Server 返回参数校验错误
 - WebSocket 中途断开并重连
 - WebSocket 收到二进制帧且模块可安全忽略
 - 输出视频未生成

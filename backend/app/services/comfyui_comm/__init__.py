@@ -347,9 +347,8 @@ def run_comfy_job(
             progress(current_index, total_rows)
             continue
 
-        requested_prompt_id = str(row_payload.get("requestedPromptId") or "").strip() or None
         try:
-            submit_response = client.post_prompt(workflow, client_id=client_id or "local-app", prompt_id=requested_prompt_id)
+            submit_response = client.post_prompt(workflow, client_id=client_id or "local-app")
         except Exception as exc:
             failures.append(
                 _build_failure(
@@ -379,21 +378,6 @@ def run_comfy_job(
             )
             progress(current_index, total_rows)
             continue
-        if requested_prompt_id and prompt_id != requested_prompt_id:
-            failures.append(
-                _build_failure(
-                    row_index=row_index,
-                    name=display_name,
-                    stage="SUBMIT",
-                    error_code="PROMPT_ID_UNEXPECTED",
-                    message=f"unexpected prompt_id: {prompt_id}",
-                    retryable=True,
-                    prompt_id=prompt_id,
-                )
-            )
-            progress(current_index, total_rows)
-            continue
-
         JOB_REGISTRY.attach_prompt(job_id, prompt_id)
         JOB_REGISTRY.reset_progress(job_id)
         update_job(meta={"prompt_id": prompt_id, "current_row": row_index, "current_name": display_name})
