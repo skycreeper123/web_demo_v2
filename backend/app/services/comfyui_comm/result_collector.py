@@ -76,14 +76,16 @@ def summarize_history_state(history_payload: dict[str, Any], prompt_id: str) -> 
     completed = bool(status.get("completed", False))
     outputs = record.get("outputs") if isinstance(record.get("outputs"), dict) else {}
 
-    if outputs:
-        return {"state": "SUCCEEDED", "record": record}
-    if status_str in {"error", "failed"}:
+    # Intermediate UI outputs can survive a later node failure. They are not
+    # evidence that execution completed, and must never hide execution errors.
+    detail = extract_execution_error(record)
+    if detail or status_str in {"error", "failed", "cancelled", "interrupted"}:
         message = str(status.get("error") or status.get("messages") or "ComfyUI execution failed")
-        detail = extract_execution_error(record)
         if detail.get("exception_message"):
             message = str(detail["exception_message"])
         return {"state": "FAILED", "record": record, "message": message, "detail": detail}
+    if completed and outputs:
+        return {"state": "SUCCEEDED", "record": record}
     if completed and not outputs:
         return {"state": "FAILED", "record": record, "message": "ComfyUI completed without outputs.", "detail": {}}
     return {"state": "PENDING", "record": record}
