@@ -1,8 +1,8 @@
 {
   "comfy_base_url": "http://127.0.0.1:8188",
-  "comfy_root_dir": "",
-  "comfy_input_dir": "",
-  "comfy_output_dir": "",
+  "comfy_root_dir": "/root/aigc_apps/ComfyUI",
+  "comfy_input_dir": "/root/aigc_apps/ComfyUI/input",
+  "comfy_output_dir": "/root/aigc_apps/ComfyUI/output",
   "temp_dir": "output/comfy_temp",
   "path_style": "linux",
   "request_timeout_sec": 30,
@@ -11,7 +11,7 @@
   "ws_enabled": true,
   "workflow_manifest_dir": "workflow",
   "csv_import": {
-    "csv_path": "root/Desktop/web_demo_v2/output/20260916_154824_430/prompt.csv",
+    "csv_path": "root/Desktop/web_demo_v2/output/20260916_154824_430/prompts.csv",
     "image_root_dir": "/root/Desktop/web_demo_v2/test_image/",
     "video_root_dir": "/root/Desktop/web_demo_v2/test_video/",
     "path_style": ""
