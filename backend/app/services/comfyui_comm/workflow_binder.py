@@ -34,6 +34,7 @@ def _workflow_label(path: Path, manifest_dir: Path) -> str:
 
 
 def _manifest_summary(path: Path, manifest_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    payload = describe_workflow_inputs(payload)
     bindings = payload.get("bindings") or {}
     return {
         "key": str(payload.get("key") or _workflow_key(path, manifest_dir)),
@@ -45,6 +46,7 @@ def _manifest_summary(path: Path, manifest_dir: Path, payload: dict[str, Any]) -
         "bindings_count": len(bindings) if isinstance(bindings, dict) else 0,
         "bindings_keys": sorted(bindings.keys()) if isinstance(bindings, dict) else [],
         "bindings": bindings if isinstance(bindings, dict) else {},
+        "input_fields": payload["input_fields"],
         "source_type": str(payload.get("source_type") or "manifest"),
         "bindings_inferred": bool(payload.get("bindings_inferred")),
     }
@@ -153,7 +155,8 @@ def _infer_bindings(workflow: dict[str, Any]) -> dict[str, list[dict[str, Any]]]
         ):
             _append_binding(bindings, "positive_prompt", {"node": node_id, "input": "prompt", "required": True})
         elif "text" in inputs and ("cliptextencode" in class_type_lower or "prompt" in class_type_lower):
-            _append_binding(bindings, "positive_prompt", {"node": node_id, "input": "text", "required": True})
+            prompt_key = "negative_prompt" if _looks_like_negative_title(title_lower) else "positive_prompt"
+            _append_binding(bindings, prompt_key, {"node": node_id, "input": "text", "required": prompt_key == "positive_prompt"})
         elif "value" in inputs and class_type_lower.startswith("primitivestring") and _looks_like_prompt_title(title_lower) and not _looks_like_negative_title(title_lower):
             _append_binding(bindings, "positive_prompt", {"node": node_id, "input": "value", "required": True})
 
@@ -177,6 +180,72 @@ def _infer_bindings(workflow: dict[str, Any]) -> dict[str, list[dict[str, Any]]]
             _append_binding(bindings, "seed", target)
 
     return bindings
+
+
+def describe_workflow_inputs(template: dict[str, Any]) -> dict[str, Any]:
+    """Expose literal inputs and explicit bindings, preserving graph connections."""
+    result = copy.deepcopy(template)
+    workflow = result.get("workflow") or {}
+    bindings = result.setdefault("bindings", {})
+    if not isinstance(bindings, dict):
+        raise RuntimeError("Bindings 必须是对象。")
+    occupied = set()
+    for key, targets in bindings.items():
+        if key not in {"image_ref", "video_ref", "positive_prompt", "negative_prompt", "seed", "output_prefix", "workflow_type"} and not key.startswith("params."):
+            raise RuntimeError(f"不支持的绑定来源：{key}；自定义参数请使用 params.参数名。")
+        if not isinstance(targets, list):
+            raise RuntimeError(f"binding '{key}' 必须是数组。")
+        for target in targets:
+            if not isinstance(target, dict):
+                raise RuntimeError(f"binding '{key}' 的目标必须是对象。")
+            node, name = str(target.get("node", "")), str(target.get("input", ""))
+            if node not in workflow or name not in workflow[node].get("inputs", {}):
+                raise RuntimeError(f"无效绑定目标：{node}.{name}")
+            if (node, name) in occupied:
+                raise RuntimeError(f"重复绑定目标：{node}.{name}")
+            occupied.add((node, name))
+    for node, data in workflow.items():
+        for name, value in data.get("inputs", {}).items():
+            if (node, name) in occupied or not isinstance(value, (str, int, float, bool)):
+                continue
+            if name.lower() == "hiddenjson":
+                continue
+            key = f"params.node_{node}.{name}"
+            if key in bindings:
+                continue
+            kind = "bool" if isinstance(value, bool) else "int" if isinstance(value, int) else "float" if isinstance(value, float) else "string"
+            if kind == "int" and (name in {"cfg", "shift", "denoise", "denoise_strength", "megapixels", "frame_rate", "force_rate", "start_percent", "end_percent", "ratio"} or name.startswith("strength")):
+                kind = "float"
+            bindings[key] = [{"node": node, "input": name, "type": kind}]
+
+    def literal(node: str, name: str, seen: set) -> Any:
+        if (node, name) in seen:
+            return None
+        seen = seen | {(node, name)}
+        value = workflow.get(node, {}).get("inputs", {}).get(name)
+        if isinstance(value, list) and len(value) == 2:
+            upstream = str(value[0])
+            inputs = workflow.get(upstream, {}).get("inputs", {})
+            if len(inputs) == 1:
+                return literal(upstream, next(iter(inputs)), seen)
+            return None
+        return value if isinstance(value, (str, int, float, bool)) else None
+
+    fields = []
+    for key, targets in bindings.items():
+        if not targets:
+            continue
+        first = targets[0]
+        node, name = str(first["node"]), first["input"]
+        value = literal(node, name, set())
+        kind = first.get("type") or ("bool" if isinstance(value, bool) else "int" if isinstance(value, int) else "float" if isinstance(value, float) else "string")
+        fields.append({"key": key, "label": f"{workflow[node].get('_meta', {}).get('title') or workflow[node].get('class_type', node)} · {name}",
+                       "type": kind, "default": str(value) if kind == "int" and value is not None else value,
+                       "required": any(t.get("required") for t in targets), "targets": targets,
+                       "advanced": key.startswith("params.node_")})
+    order = {key: index for index, key in enumerate(("image_ref", "video_ref", "positive_prompt", "negative_prompt", "seed", "output_prefix"))}
+    result["input_fields"] = sorted(fields, key=lambda field: order.get(field["key"], 100))
+    return result
 
 
 def _infer_template_from_raw_api(path: Path, manifest_dir: Path, workflow: dict[str, Any]) -> dict[str, Any]:
@@ -281,8 +350,8 @@ def bind_workflow(
         raise RuntimeError("工作流 bindings 必须是对象。")
 
     bind_source = {
-        "positive_prompt": str(payload.get("positivePrompt") or ""),
-        "negative_prompt": str(payload.get("negativePrompt") or ""),
+        "positive_prompt": payload.get("positivePrompt"),
+        "negative_prompt": payload.get("negativePrompt"),
         "image_ref": staged_inputs.get("image_ref") or "",
         "video_ref": staged_inputs.get("video_ref") or "",
         "seed": payload.get("seed"),
@@ -330,8 +399,11 @@ def resolve_template_payload(payload: dict[str, Any], config: dict[str, Any]) ->
             "workflow": _safe_json_loads(workflow_json_text, "工作流 JSON"),
             "bindings": _safe_json_loads(bindings_json_text or "{}", "绑定 JSON"),
         }
-        return template_payload
+        return describe_workflow_inputs(template_payload)
 
     if not template_key:
         raise RuntimeError("请先选择工作流模板，或直接填写工作流 JSON。")
-    return load_workflow_template(config, template_key)
+    template_payload = load_workflow_template(config, template_key)
+    if bindings_json_text:
+        template_payload["bindings"] = _safe_json_loads(bindings_json_text, "绑定 JSON")
+    return describe_workflow_inputs(template_payload)

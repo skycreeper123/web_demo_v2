@@ -937,9 +937,39 @@ class DemoHandler(BaseHTTPRequestHandler):
                 },
             )
 
+        if path == "/api/comfy/upload":
+            from web_demo.backend.app.services.comfyui_comm.input_stager import SUPPORTED_IMAGE_EXTENSIONS, SUPPORTED_VIDEO_EXTENSIONS
+            suffix = Path(unquote(self.headers.get("X-Filename", ""))).suffix.lower()
+            length = int(self.headers.get("Content-Length", "0"))
+            if suffix not in SUPPORTED_IMAGE_EXTENSIONS | SUPPORTED_VIDEO_EXTENSIONS or not 0 < length <= 1024 ** 3:
+                self.close_connection = True
+                return json_response(self, HTTPStatus.BAD_REQUEST, {"error": "请选择图片或视频文件，大小须在 1 GB 以内。"})
+            destination = ensure_dir(_PROJECT_ROOT / "uploads" / "comfy") / f"{uuid.uuid4().hex}{suffix}"
+            try:
+                with destination.open("wb") as handle:
+                    remaining = length
+                    while remaining:
+                        chunk = self.rfile.read(min(1024 * 1024, remaining))
+                        if not chunk:
+                            raise ValueError("上传未完成")
+                        handle.write(chunk)
+                        remaining -= len(chunk)
+            except Exception:
+                destination.unlink(missing_ok=True)
+                raise
+            return json_response(self, HTTPStatus.OK, {"path": str(destination)})
+
+        if path == "/api/comfy/inspect":
+            from web_demo.backend.app.services.comfyui_comm.workflow_binder import resolve_template_payload
+            try:
+                template = resolve_template_payload(read_body_json(self), load_comfy_config())
+                return json_response(self, HTTPStatus.OK, {"input_fields": template["input_fields"], "bindings": template["bindings"]})
+            except (ValueError, RuntimeError, TypeError, KeyError) as exc:
+                return json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
+
         if path == "/api/comfy/run":
             payload = read_body_json(self)
-            if not str(payload.get("csvPath") or "").strip():
+            if payload.get("inputMode") != "direct" and not str(payload.get("csvPath") or "").strip():
                 return json_response(self, HTTPStatus.BAD_REQUEST, {"error": "Please provide a CSV path."})
             job = start_comfy_generation_job(payload)
             return json_response(self, HTTPStatus.ACCEPTED, {"jobId": job.id, "job": job_snapshot(job)})

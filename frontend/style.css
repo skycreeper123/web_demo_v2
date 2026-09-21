@@ -799,6 +799,7 @@ a {
 a:hover { text-decoration: underline; }
 
 @media (max-width: 1180px) {
+  #comfyStudioView .workspace { grid-template-columns: 1fr; }
   .workspace,
   .content-grid,
   .prompt-grid,
@@ -866,3 +867,10 @@ a:hover { text-decoration: underline; }
     flex-direction: column;
   }
 }
+.comfy-auto-field { min-width: 0; }
+.comfy-auto-field small { overflow-wrap: anywhere; opacity: .7; }
+.comfy-field-text { min-height: 68px; resize: vertical; }
+.comfy-advanced { margin-top: 20px; }
+.comfy-advanced summary { cursor: pointer; margin-bottom: 16px; }
+.comfy-auto-field[hidden] { display: none; }
+#comfyFieldSearch { margin-bottom: 16px; }

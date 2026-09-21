@@ -1,0 +1,856 @@
+{
+  "1293": {
+    "inputs": {
+      "steps": 4,
+      "cfg": 1,
+      "shift": 5,
+      "seed": [
+        "1413",
+        0
+      ],
+      "force_offload": true,
+      "scheduler": "dpm++_sde",
+      "riflex_freq_index": 0,
+      "denoise_strength": 1,
+      "batched_cfg": "",
+      "rope_function": "comfy",
+      "start_step": 0,
+      "end_step": -1,
+      "add_noise_to_samples": false,
+      "model": [
+        "1297",
+        0
+      ],
+      "image_embeds": [
+        "1388",
+        0
+      ],
+      "text_embeds": [
+        "1405",
+        0
+      ]
+    },
+    "class_type": "WanVideoSampler",
+    "_meta": {
+      "title": "WanVideo Sampler"
+    }
+  },
+  "1294": {
+    "inputs": {
+      "enable_vae_tiling": false,
+      "tile_x": 272,
+      "tile_y": 272,
+      "tile_stride_x": 144,
+      "tile_stride_y": 128,
+      "normalization": "default",
+      "vae": [
+        "1426",
+        0
+      ],
+      "samples": [
+        "1293",
+        0
+      ]
+    },
+    "class_type": "WanVideoDecode",
+    "_meta": {
+      "title": "WanVideo Decode"
+    }
+  },
+  "1295": {
+    "inputs": {
+      "backend": "inductor",
+      "fullgraph": false,
+      "mode": "default",
+      "dynamic": false,
+      "dynamo_cache_size_limit": 64,
+      "compile_transformer_blocks_only": true,
+      "dynamo_recompile_limit": 128,
+      "force_parameter_static_shapes": true,
+      "allow_unmerged_lora_compile": false
+    },
+    "class_type": "WanVideoTorchCompileSettings",
+    "_meta": {
+      "title": "WanVideo Torch Compile Settings"
+    }
+  },
+  "1296": {
+    "inputs": {
+      "model": [
+        "1426",
+        3
+      ],
+      "lora": [
+        "1426",
+        4
+      ]
+    },
+    "class_type": "WanVideoSetLoRAs",
+    "_meta": {
+      "title": "WanVideo Set LoRAs"
+    }
+  },
+  "1297": {
+    "inputs": {
+      "model": [
+        "1296",
+        0
+      ],
+      "block_swap_args": [
+        "1298",
+        0
+      ]
+    },
+    "class_type": "WanVideoSetBlockSwap",
+    "_meta": {
+      "title": "WanVideo Set BlockSwap"
+    }
+  },
+  "1298": {
+    "inputs": {
+      "blocks_to_swap": 25,
+      "offload_img_emb": false,
+      "offload_txt_emb": false,
+      "use_non_blocking": true,
+      "vace_blocks_to_swap": 0,
+      "prefetch_blocks": 1,
+      "block_swap_debug": false
+    },
+    "class_type": "WanVideoBlockSwap",
+    "_meta": {
+      "title": "WanVideo Block Swap"
+    }
+  },
+  "1299": {
+    "inputs": {
+      "width": [
+        "1371",
+        0
+      ],
+      "height": [
+        "1371",
+        1
+      ],
+      "upscale_method": "lanczos",
+      "keep_proportion": "pad_edge_pixel",
+      "pad_color": "0, 0, 0",
+      "crop_position": "top",
+      "divisible_by": 16,
+      "device": "cpu",
+      "image": [
+        "1399",
+        0
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "Resize Image v2"
+    }
+  },
+  "1324": {
+    "inputs": {
+      "value": "WanAnimate"
+    },
+    "class_type": "PrimitiveString",
+    "_meta": {
+      "title": "图片来源"
+    }
+  },
+  "1325": {
+    "inputs": {
+      "value": "视频"
+    },
+    "class_type": "PrimitiveString",
+    "_meta": {
+      "title": "文件夹名字"
+    }
+  },
+  "1330": {
+    "inputs": {
+      "value": "Name"
+    },
+    "class_type": "PrimitiveString",
+    "_meta": {
+      "title": "图片的名称 保存到“output/视频” 文件夹里面"
+    }
+  },
+  "1337": {
+    "inputs": {
+      "video_info": [
+        "1412",
+        3
+      ]
+    },
+    "class_type": "VHS_VideoInfo",
+    "_meta": {
+      "title": "Video Info 🎥🅥🅗🅢"
+    }
+  },
+  "1343": {
+    "inputs": {
+      "string_a": [
+        "1325",
+        0
+      ],
+      "string_b": [
+        "1330",
+        0
+      ],
+      "delimiter": "/"
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "连接"
+    }
+  },
+  "1344": {
+    "inputs": {
+      "string_a": [
+        "1343",
+        0
+      ],
+      "string_b": [
+        "1324",
+        0
+      ],
+      "delimiter": "_"
+    },
+    "class_type": "StringConcatenate",
+    "_meta": {
+      "title": "连接"
+    }
+  },
+  "1346": {
+    "inputs": {
+      "value": 832
+    },
+    "class_type": "easy int",
+    "_meta": {
+      "title": "视频分辨率"
+    }
+  },
+  "1348": {
+    "inputs": {
+      "preview": "",
+      "previewMode": null,
+      "source": [
+        "1344",
+        0
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "预览任意"
+    }
+  },
+  "1358": {
+    "inputs": {
+      "images": [
+        "1359",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "预览图像"
+    }
+  },
+  "1359": {
+    "inputs": {
+      "batch_index": 0,
+      "length": 1,
+      "image": [
+        "1420",
+        0
+      ]
+    },
+    "class_type": "ImageFromBatch",
+    "_meta": {
+      "title": "从批次获取图像"
+    }
+  },
+  "1362": {
+    "inputs": {
+      "image": [
+        "1420",
+        0
+      ]
+    },
+    "class_type": "GetImageSize+",
+    "_meta": {
+      "title": "🔧 Get Image Size"
+    }
+  },
+  "1363": {
+    "inputs": {
+      "anything": [
+        "1364",
+        0
+      ]
+    },
+    "class_type": "easy cleanGpuUsed",
+    "_meta": {
+      "title": "清理显存占用"
+    }
+  },
+  "1364": {
+    "inputs": {
+      "width": [
+        "1362",
+        0
+      ],
+      "height": [
+        "1362",
+        1
+      ],
+      "keep_proportions": false,
+      "upscale_method": "nearest-exact",
+      "crop": "disabled",
+      "mask": [
+        "1368",
+        0
+      ]
+    },
+    "class_type": "ResizeMask",
+    "_meta": {
+      "title": "Resize Mask"
+    }
+  },
+  "1365": {
+    "inputs": {
+      "vitpose_model": "vitpose-l-wholebody.onnx",
+      "yolo_model": "yolov10m.onnx",
+      "onnx_device": "CUDAExecutionProvider"
+    },
+    "class_type": "OnnxDetectionModelLoader",
+    "_meta": {
+      "title": "ONNX Detection Model Loader"
+    }
+  },
+  "1368": {
+    "inputs": {
+      "block_size": 32,
+      "device": "cpu",
+      "masks": [
+        "1403",
+        0
+      ]
+    },
+    "class_type": "BlockifyMask",
+    "_meta": {
+      "title": "Blockify Mask"
+    }
+  },
+  "1370": {
+    "inputs": {
+      "color": "0,0,0",
+      "device": "cpu",
+      "image": [
+        "1420",
+        0
+      ],
+      "mask": [
+        "1375",
+        0
+      ]
+    },
+    "class_type": "DrawMaskOnImage",
+    "_meta": {
+      "title": "Draw Mask On Image"
+    }
+  },
+  "1371": {
+    "inputs": {
+      "image": [
+        "1420",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "获取图像尺寸"
+    }
+  },
+  "1373": {
+    "inputs": {
+      "images": [
+        "1299",
+        0
+      ]
+    },
+    "class_type": "PreviewImage",
+    "_meta": {
+      "title": "预览图像"
+    }
+  },
+  "1375": {
+    "inputs": {
+      "anything": [
+        "1363",
+        0
+      ]
+    },
+    "class_type": "easy clearCacheAll",
+    "_meta": {
+      "title": "清除全部缓存"
+    }
+  },
+  "1377": {
+    "inputs": {
+      "image": [
+        "1294",
+        0
+      ]
+    },
+    "class_type": "GetImageSizeAndCount",
+    "_meta": {
+      "title": "Get Image Size & Count"
+    }
+  },
+  "1378": {
+    "inputs": {
+      "image": [
+        "1420",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "获取图像尺寸"
+    }
+  },
+  "1380": {
+    "inputs": {
+      "frame_rate": [
+        "1337",
+        5
+      ],
+      "loop_count": 0,
+      "filename_prefix": [
+        "1344",
+        0
+      ],
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": false,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "1421",
+        0
+      ],
+      "audio": [
+        "1412",
+        2
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "视频将会保存到“comfyui/output/视频” 文件夹里面"
+    }
+  },
+  "1381": {
+    "inputs": {
+      "width": [
+        "1383",
+        0
+      ],
+      "height": [
+        "1383",
+        1
+      ],
+      "retarget_padding": 16,
+      "body_stick_width": -1,
+      "hand_stick_width": -1,
+      "draw_head": "True",
+      "pose_data": [
+        "1384",
+        0
+      ]
+    },
+    "class_type": "DrawViTPose",
+    "_meta": {
+      "title": "Draw ViT Pose"
+    }
+  },
+  "1383": {
+    "inputs": {
+      "image": [
+        "1420",
+        0
+      ]
+    },
+    "class_type": "GetImageSize",
+    "_meta": {
+      "title": "获取图像尺寸"
+    }
+  },
+  "1384": {
+    "inputs": {
+      "width": [
+        "1383",
+        0
+      ],
+      "height": [
+        "1383",
+        1
+      ],
+      "model": [
+        "1365",
+        0
+      ],
+      "images": [
+        "1420",
+        0
+      ]
+    },
+    "class_type": "PoseAndFaceDetection",
+    "_meta": {
+      "title": "Pose and Face Detection"
+    }
+  },
+  "1388": {
+    "inputs": {
+      "width": [
+        "1378",
+        0
+      ],
+      "height": [
+        "1378",
+        1
+      ],
+      "num_frames": [
+        "1378",
+        2
+      ],
+      "force_offload": false,
+      "frame_window_size": 81,
+      "colormatch": "disabled",
+      "pose_strength": 1,
+      "face_strength": 1,
+      "tiled_vae": false,
+      "vae": [
+        "1426",
+        0
+      ],
+      "clip_embeds": [
+        "1407",
+        0
+      ],
+      "ref_images": [
+        "1299",
+        0
+      ],
+      "pose_images": [
+        "1381",
+        0
+      ],
+      "face_images": [
+        "1384",
+        1
+      ],
+      "bg_images": [
+        "1370",
+        0
+      ],
+      "mask": [
+        "1368",
+        0
+      ]
+    },
+    "class_type": "WanVideoAnimateEmbeds",
+    "_meta": {
+      "title": "WanVideo Animate Embeds"
+    }
+  },
+  "1399": {
+    "inputs": {
+      "image": "3317c3cf5aa508644f57f247310d27f3.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "载入参考图 Ctrl+M 开启/关闭节点"
+    }
+  },
+  "1400": {
+    "inputs": {
+      "frame_rate": [
+        "1337",
+        5
+      ],
+      "loop_count": 0,
+      "filename_prefix": [
+        "1344",
+        0
+      ],
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "1438",
+        0
+      ],
+      "audio": [
+        "1412",
+        2
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "视频将会保存到“comfyui/output/视频” 文件夹里面"
+    }
+  },
+  "1403": {
+    "inputs": {
+      "expand": 15,
+      "tapered_corners": true,
+      "mask": [
+        "1437",
+        1
+      ]
+    },
+    "class_type": "GrowMask",
+    "_meta": {
+      "title": "扩展遮罩"
+    }
+  },
+  "1405": {
+    "inputs": {
+      "positive_prompt": [
+        "1414",
+        0
+      ],
+      "negative_prompt": "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走",
+      "force_offload": true,
+      "use_disk_cache": false,
+      "device": "gpu",
+      "t5": [
+        "1426",
+        2
+      ]
+    },
+    "class_type": "WanVideoTextEncode",
+    "_meta": {
+      "title": "WanVideo TextEncode"
+    }
+  },
+  "1407": {
+    "inputs": {
+      "strength_1": 1,
+      "strength_2": 1,
+      "crop": "center",
+      "combine_embeds": "average",
+      "force_offload": true,
+      "tiles": 0,
+      "ratio": 0.5,
+      "clip_vision": [
+        "1426",
+        1
+      ],
+      "image_1": [
+        "1299",
+        0
+      ]
+    },
+    "class_type": "WanVideoClipVisionEncode",
+    "_meta": {
+      "title": "WanVideo ClipVision Encode"
+    }
+  },
+  "1412": {
+    "inputs": {
+      "video": "123.mp4",
+      "force_rate": 16,
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": 77,
+      "skip_first_frames": 0,
+      "select_every_nth": 1,
+      "format": "AnimateDiff"
+    },
+    "class_type": "VHS_LoadVideo",
+    "_meta": {
+      "title": "载入视频"
+    }
+  },
+  "1413": {
+    "inputs": {
+      "seed": 771840342206254
+    },
+    "class_type": "easy seed",
+    "_meta": {
+      "title": "随机种"
+    }
+  },
+  "1414": {
+    "inputs": {
+      "value": ""
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "提示词（描述你想要生成的图片内容）"
+    }
+  },
+  "1420": {
+    "inputs": {
+      "width": [
+        "1346",
+        0
+      ],
+      "height": [
+        "1346",
+        0
+      ],
+      "upscale_method": "nearest-exact",
+      "keep_proportion": "resize",
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "divisible_by": 16,
+      "device": "cpu",
+      "image": [
+        "1412",
+        0
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "Resize Image v2"
+    }
+  },
+  "1421": {
+    "inputs": {
+      "inputcount": 2,
+      "direction": "right",
+      "match_image_size": true,
+      "Update inputs": null,
+      "image_1": [
+        "1422",
+        0
+      ],
+      "image_2": [
+        "1423",
+        0
+      ]
+    },
+    "class_type": "ImageConcatMulti",
+    "_meta": {
+      "title": "Image Concatenate Multi"
+    }
+  },
+  "1422": {
+    "inputs": {
+      "text_x": 10,
+      "text_y": 2,
+      "height": 48,
+      "font_size": 32,
+      "font_color": "white",
+      "label_color": "black",
+      "font": "FreeMono.ttf",
+      "text": "Original Video",
+      "direction": "up",
+      "image": [
+        "1420",
+        0
+      ]
+    },
+    "class_type": "AddLabel",
+    "_meta": {
+      "title": "Add Label"
+    }
+  },
+  "1423": {
+    "inputs": {
+      "text_x": 10,
+      "text_y": 2,
+      "height": 48,
+      "font_size": 32,
+      "font_color": "white",
+      "label_color": "black",
+      "font": "FreeMono.ttf",
+      "text": "Generated Video",
+      "direction": "up",
+      "image": [
+        "1438",
+        0
+      ]
+    },
+    "class_type": "AddLabel",
+    "_meta": {
+      "title": "Add Label"
+    }
+  },
+  "1424": {
+    "inputs": {
+      "mode": "always",
+      "volume": 0.5,
+      "file": "notify.mp3",
+      "any": [
+        "1421",
+        0
+      ]
+    },
+    "class_type": "PlaySound|pysssss",
+    "_meta": {
+      "title": "PlaySound 🐍"
+    }
+  },
+  "1426": {
+    "inputs": {
+      "seed": 894100417860827,
+      "hiddenJson": "gAAAAABpVSIt0VetYp7DehETZiGb_8w7jQEWMxqb6LtHo8CJ4xVxgGnntftRYkoSuM3DYscWNQBuiiDCyZsI1JH60390QI7LVbohPIyRSYXgYxOoFN2a8GgEMGRSn4PqrmUFHLV449hevY-SF2KpMnHj8XHpSYxTChN-ok_U-g9c3wUoW5XBzDz9AuvO-eb_jEkiUXvfaSrni1uDcLjoUPdbBVlKLfs9vCB_CV3MgdeeWZd3O85mgT_vvO9yw72FdG5JPiJZnKPV3l1M4Y7i3WKaLhqCZWmoo47es4nl9ZHyaLRvh7vrs9zjg-GzUjmxDel7-BaQS0kKsLEAXkkVscw58SnYvADC3J0RCbEf2NqGyPIrPnZfeYsPEOh-zklNaMX6UqCH5cfzS9-JnEETX7eBuwnaDZ-czmbDlsIr6b2yICava36Zr0aJUByJOVXb-EaJR_8_w77wT3te8mh6wQLsfEnX5PyS3HMRQ0sUAUh7wfka2XIlpQXBc8IWxmPKZ3iaIG5zcsY6DMxgwmizMzDP2wyJRHm6uQbGT2AOMjuP33ev-zhSeaeDrYeEp2peyptaVnsgrb6ykwxGiE4VM10eoiRLMLPf9k1PdeQf_hdktWtjKloomjZTdBRxyisohfQI9LSYXayIo6THoylMLQmJzHVf-LftRM89xz8CH-GpFuXWPvbsAdNIaz1J1LOju_i2YSJNsAyC_ifndsVn2ohzXFVHHAdxMKpVJhp5Em3f1_iymbrZtoVumkNw6uL2YGMjDB4AbhxKz0m_Ekd_8W-pL8mO0qh9pz6WZhCSEWetJyrjFuH6aLGSk3PMoTTiuIGOe2KbEVtB7It2_8-1LbEObV3WLycbNvye823RXT2DBGqonijUmWNcYZDw_Bq12xoX3OhWAe2PShexDzxeNNH6Ic3fdcWH3CjevVaPRvd18qEouEA_WzB_KxOM9Q7GNZ9W6IkRA6D-XTtyf09K9ibtG6sjlkLBnMBLfGcIYcM1B-2jdPP-kPiRFRyVJaxZG0PghFuZALGOYnTTg8p9y3cmiYTd4XKq-2gWCU3Iy1K_Y1VlkKx6UqiZ5B_o8sF7jxaFUyF7XyMo8oJT52azZXb4QxtFlzG25kJG_i0sQx9y3lND6PRppLIaBVH3l0DHmZ5SMW3mrRYTo__0ZDwUsgWV_pwJSXcySwyTFt8JI4JoJb1QfDlIf2sE7b4SVGhbp_R8kqQ9UCm1v0SbcgxjwUV4bdttnjMMv8wVEHwnNOs6akzipuW-oM5Ef0YmcC1a0hU-2tMB3JXpUuwG6juLwuhga88Yr4lu9glUmyHUXHIQN_fRRNxeukNZJOynHpw_q2vRfCaIkwIg7QsmLt_PcU1YFPstHL8WxMdHBzBpklmBkdiXEHVQL4VO8IPLSnfQtJ6OXkQDyYvwrsNKpdYSj6i2AlNIsnunzBSmdDZCsd503gzjIdgUYHKcgF3I1qG5bRizUF1bA8jmNJveTJhyMv1CBoLIzAAe84DH9lKMT5n3Rie0RAH-sW3LS8UqGnhAhEWxjd2cxG4b8ZodoFT1-LX8a5ZXXcodN2WKGzYN0Yr-_bvSaDupWXhiSTBcn-FafzhWpBCEX3ZL4_81HNnata-dIL-Ijv3Fd4IrRYYz2iRJTv_Ecl_1FmWq_mYqBNFaYN0IanG7n5SVrH2lDoFG_nWGRmpdpySaNEOUNxOMsswj2rYLVLXlzqxFd4jRQbmZxXDz77YLUlazkKSy9-2a1qoahbgajZWzctHNJVhwRX2fCrIvocV5iJJD_HJvyewLmDUfX1EIZPeqDbSa3bsVDx8h-fajS4q3iQgKpFoGICS7ruQ7M85yBydLGA3pukZxZy1KgUu4jNXBW0kmzR_4j7-v2uNYzPVhu9qx0Lw5ZNxEeX4EDV0Wg8TG92Kdqap7iHA20pp-64B0cKpfR83601fix0oHACqhicqXzYqfH3FMS_RTMBNNrec5AI7F0lTCy8e1NKUlg3jvYHE_aWLu8Zcxee_55tESUp72dOnpHxEY994Ezskr2ZnYFcuuTxFeT_WY_y2vQh3Ejr8BQBiiqufuuviqb_JLeCosSJyyaiIBWZu0DD40JZP4WgTIwxTym3P609CchlFYsjkplAJrMGRzjHxnSaiU5Yzf-ydA9yScNhIs6z3_ILSnjPje-r5UEvNtK9hlOLZOOxyok4jkN4FJ3ANGWl7RNdsgStiRliCLXrh57qiTkAeRuLKZa-vNXSlyspRZSqQjp_Lcbievcqee4sBRT1tliF1NMuPmmOgWoEf4-_nLuw-L3cvFcCgZp_Yh8G21NxBhuOOC7Sby3QzzMDwNdmzWBjYZXdoIozdKB7alHBoDnNdbrqKD3x6aVeXUZRelNEUOHeOpuH68UKo9cmxGBtP89xGRiiX32g3cPBr2KwS0Z4LRrx-KOLQGf-Ywzv7H9FtCY2Ax7fqMLm1mVqcP88xegbOPrfXvtZCA9XZJ1r1Wzr2oeSoDSYmFre2Yo1VL03_vbz89d2kugovGJeHIZZvxDjmuoJytHU_NDCiy7ts0M5XLUjV1BqJFFlNVYHRWVMaAyDKzh_U-wLXM9YVBvI_uUNfUMlWJP7XoGR602w4XzRjd5xvDE5gKQp3i4HZggrpF1YAv2r0rKiLCwGBCu8_W_ZT8L6CF0WyoERGparh7VOfrfTvWoWbYYub98JYaGQlr7To1TRAjHVc5S8nrGM9sz_41VpwFFI_FVhyrSEjbcmkc5_yNc_nkDlf8dN8szFRc3o6piCy6ndr0WgXhXBla37tPmaiAYB1zWTkMmVnavMu67Sm94tAlnTiEaPb3oPCee0fMflYVeMpg5btTeObuJ5EtSJnbmdV4v2vUoXaHeMxPjLSbI-tJ9mQ_FsMSS4cYpn8_u-SyDW28QdzdAg2R2IIrAoiv-GzcfJT9LJRfDITqH0wS2ALmqNUHLISRVnmzX3J-pibcPnPhALHijWfmsfUA4Mm3RFO7eDHgld0D4hTKQ-CDFb6Zya_xFl-oZQXtkaVcfwHD0BWTTnA_5GaTfhnbx1zYaqZWm0oNk72hecVrDrvDX5XKHa9Jct0sDbgJzpKhHoaRuXls_kNdDM2BSMH0Hjmg5db-g_KHHFqlGcZ6F1-BgA-KdB92Akyn-VhPlfncDHrG8Pt8I4cB9AXRH3wwh2UYo0ak43V8-gq_c7CxtqLCYbkvP-mRbS_yuTdW9F_ZBzUAYyFIRsXjMZj056ANcXOtkdaXIA5rfAxg6__dLD0edP3D1rwp0Rv2_B77Nr7taZgEqdRNnfmPCWui8UVrwZhhlt70-N59Dk1NQDLo-9ryLXfz6Qat-S0Vjp6TFQB4wC02D2nxUGdgYFZzXhKIvwYc3HmWxtOFuQ_x0Ube5mgoRb3bAOYvApPYw734Nc6Hb-Oq8xGEu7nwwBDJFaHE0jsAlTi8J-BBXplMGJEqQ4BnxHBvMYzbYyQOUxk6p7CHePrGhceHBeEXMck7KpP3bjh5AmN5vOxgoSZlPbHTi6AIrUjzcgV1qJTiCrFCO1nEB-TP7ce6n9c_aHnL9hbjKSRTiWFAKWh0s8ld5SAwtibBaEYfwk_WpHPYUPZjnthFqNNiDLGU-Szh43hQhGLjsmqcZuN7Nv7P5iXEZQnIVqyOZcF7QWs4bDiJ735rqxDu9FjSoGChL_b08VvRAt8ayrWAm6Ius2I_9XzHVjwWoOdQAHLMSA5_hK8YdJ2kuDkbCXK5l_ZA2ivI7jWTStfnxO0PKXkel9x8hX7O8rgO8yaNuRKZ2F0hv5emLXm4M_7AARUmM_HUfZtQySwIznJMM3E6J_gdFp1JVU-Cvl4RajoIVrq9xIl9kqE3g8k4lr6yD-c5vi0qRA3DDAnZ2HbexojmdF_U8MAkiX7LX_Ws4kD8cHPabCVpG4YU5WWyznLqzPr7YrGKOTiADiwQe3OV4AaGBAwE8SOaMtl625Neufp3JACCjf8Xi15D3sKMhVEZC5Hu1A2OlhZj100zUeAuYTa7pZQ4__EnkkHquCgSh6OhTkWsMJtLOC-HCHt2JJBp2oGPFy2PdvC5lt6pcmpch8mDSVFkMRiFd3JcME4BQwQvnzMvIJ-KqX3yVItm3It0vfMsyLlQneFwUa59WeuzpEqiG9f7Q4Nj_Nlmzo5NJwIPkof9vaZHacbKgRpY72P28vLwb9zJdRbnCeHU03zni4v9pEHcH9ftISRkZpQpDQ_L0mq_FhaPHt2PpxFI4RmfYl5CnHi-ufw2ELDLBSMXvluTCJfgyserElfdWn_j_VrDyLKpap8sZSgWgzMcDYaHJWw1sJqaALK_Q8xFnnHFmn6o7KmJb8Q7hDJaW5mFGQL89RTZQVDfShnXS-NHGhSV9v0PbbnYaykRfo9Ilp_iiuE_h9cAfk7zh9LRWN_xlb8-Sce6uVfpBdHzZpLwGQqASMy6IFjkvpCTCl7aasXgkVdbCMlbVhILrF3tDFiDOMAvbe54m51UZPh7Fri175I8hLZGYlXwcykJ5U9QFjSS79wmlpN-c5yuLEF7HrDLjiIgTQTdxJVXG_C3jBxLTq2qQnZAQdC75hrKTr-dnU6cW39sDiAh7dG3VwkjuxcD8puYY-qhKrGT5ThAIdVNA3UP80Nmc3ne44VS1FRubZjs-1WFfC6j84yOEs8nNy6j6rApTOZFl0ThX2mZn4BC0KbifKVEAVCRTKsJ6fSgsQAgQRWkG_HjhdJqS1_w3NlP6NHfyeRWHiJRMUceDb31Sz5uCV2GUCNlcUEErZ3uqwE765-k8OmHQCarAPYhQQeOc1bLwWL5Nt7v4Le8IyQo_QS6XH9oKfMzxVhw6coRIov3D-_qgO1jD_JWQg1giOkCcxQkoGQ64xLPRD6Zb_1CWWjDQoudskqis9EHKgmwwXbKXlchZ5XNrX59-DExzBCEDKc685GX3SevvJHAGUuNv_wSilyKYUhimdePv9T1mFjbXgzSGhDmW28iSaK4imBD2_ez7paIka4QlW1cVafLo0CMmNuInpcJLd7BD-U9tXalblovH36DlM1Fq09L_RG5MB16cFaEHzUoiXZPTK9nG_KqbyX6tsFSK7GwxB-5o5DNyGXRX-ZFnCEFwKsORtmgGC0JYbTDSLKBYuEMSNT0yi1CljUoGWVWL71nnWbFx2zr-L71dgXUKr9B1Eiq46-eXLr_qrEWNQ9A8RD99GegeuzsgYredEwCu94oh3mXE127MxWiHEz7bwQwRO9S_bben4en8FuDDCzYS3poSNqPYAHxmRiqtZ0Whl4uKP552jGFqwy-snd64bGB-YSFg6jW66XZqC6vTkwLDMulVXPDZDrf_35HvOGAcUiFLwMJf_RRY7PYN7zIaFIqJ3U3OeDNHbMcT38udgKn3hlzZadyWDI",
+      "nodeConfig": "[]",
+      "compile_args_1": [
+        "1295",
+        0
+      ]
+    },
+    "class_type": "ashuo_lock",
+    "_meta": {
+      "title": "ashuo_lock"
+    }
+  },
+  "1437": {
+    "inputs": {
+      "model": "RMBG-2.0",
+      "sensitivity": 1,
+      "process_res": 1024,
+      "mask_blur": 0,
+      "mask_offset": 0,
+      "invert_output": false,
+      "refine_foreground": false,
+      "background": "Alpha",
+      "background_color": "#222222",
+      "image": [
+        "1420",
+        0
+      ]
+    },
+    "class_type": "RMBG",
+    "_meta": {
+      "title": "去除背景 (RMBG)"
+    }
+  },
+  "1438": {
+    "inputs": {
+      "start_index": 0,
+      "num_frames": [
+        "1378",
+        2
+      ],
+      "images": [
+        "1377",
+        0
+      ]
+    },
+    "class_type": "GetImageRangeFromBatch",
+    "_meta": {
+      "title": "Get Image or Mask Range From Batch"
+    }
+  }
+}

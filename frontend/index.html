@@ -100,7 +100,7 @@
               <p>连接本机自托管 ComfyUI，提交工作流、监听执行并回收结果。</p>
               <ul class="feature-list">
                 <li>本地路径投递输入图片 / 视频</li>
-                <li>固定模板或内联 API workflow</li>
+                <li>选择工作流模板，自动生成输入表单</li>
                 <li>健康检查 / 运行 / 取消 / 重试</li>
               </ul>
               <div class="feature-actions">
@@ -979,10 +979,6 @@
               <select id="comfyTemplateSelect" class="input"></select>
             </label>
             <div id="comfyTemplateDescription" class="rule-box">加载模板中...</div>
-            <div class="section-actions" style="margin-top: 0.75rem;">
-              <button id="applyComfyTemplateBindingsBtn" class="btn btn-ghost">载入模板 Bindings</button>
-            </div>
-            <pre id="comfyBindingsPreview" class="rule-box code-preview">模板 bindings 将显示在这里</pre>
             <div class="form-grid" style="margin-top: 0.85rem;">
               <label>
                 <span>Workflow Type</span>
@@ -1037,21 +1033,15 @@
             <div class="section-header">
               <div>
                 <p class="panel-kicker">Step 04</p>
-                <h2>高级工作流覆盖</h2>
-                <p class="panel-note">未填写时使用所选模板；填写后以后端内联 JSON 为准。</p>
+                <h2>工作流输入</h2>
+                <p class="panel-note">自动识别模板中的输入。素材可直接上传或填写后端可访问的完整文件路径；参数修改仅用于本次任务。</p>
               </div>
             </div>
-            <div class="prompt-grid">
-              <label class="prompt-field">
-                <span>Workflow JSON</span>
-                <textarea id="comfyWorkflowJson" class="textarea" spellcheck="false" placeholder='{"1":{"class_type":"..."}}'></textarea>
-              </label>
-              <label class="prompt-field">
-                <span>Bindings JSON</span>
-                <textarea id="comfyBindingsJson" class="textarea" spellcheck="false" placeholder='{"positive_prompt":[{"node":"10","input":"text"}]}'></textarea>
-              </label>
-            </div>
+            <label class="prompt-field"><span>运行方式</span><select id="comfyInputMode" class="input"><option value="direct">网页输入 · 单次运行</option><option value="csv">CSV 批量 · 表单作为默认值</option></select></label>
+            <p class="panel-note">CSV 模式下，CSV 中的非空字段和 params_json 优先。未修改的参数保留模板值。节点连线不作为普通参数编辑。</p>
+            <div id="comfyInputFields"></div>
           </article>
+
 
           <article class="card panel">
             <div class="section-header">

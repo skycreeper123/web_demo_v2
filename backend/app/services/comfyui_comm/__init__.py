@@ -136,13 +136,17 @@ def _build_row_payload(
         row.get("video_name"),
         path_style=path_style,
     )
-    positive_prompt = row.get("positive_prompt") or ""
-    negative_prompt = row.get("negative_prompt") or ""
+    form = payload.get("formInputs") or {}
+    image_path = image_path or form.get("image_ref") or ""
+    video_path = video_path or form.get("video_ref") or ""
+    positive_prompt = row.get("positive_prompt") or form.get("positive_prompt")
+    negative_prompt = row.get("negative_prompt") or form.get("negative_prompt")
     row_params = _parse_params_json(row.get("params_json"))
     default_params = payload.get("defaultParams") if isinstance(payload.get("defaultParams"), dict) else {}
-    merged_params = {**default_params, **row_params}
+    form_params = {key[7:]: value for key, value in form.items() if key.startswith("params.")}
+    merged_params = {**default_params, **form_params, **row_params}
     requested_prompt_id = f"{parent_job_id}_{row_index:04d}"
-    output_prefix = row.get("output_prefix") or ""
+    output_prefix = row.get("output_prefix") or form.get("output_prefix") or ""
     if not output_prefix:
         explicit_prefix_base = str(payload.get("defaultOutputPrefixBase") or "").strip()
         if explicit_prefix_base:
@@ -151,7 +155,7 @@ def _build_row_payload(
             output_prefix = f"video/jobs/{parent_job_id}/row_{row_index:04d}"
 
     seed_text = row.get("seed") or ""
-    seed = int(seed_text) if seed_text else payload.get("defaultSeed")
+    seed = int(seed_text) if seed_text else form.get("seed", payload.get("defaultSeed"))
     workflow_type = str(
         payload.get("workflowType") or row.get("workflow_type") or template_payload.get("workflow_type") or ""
     ).strip()
@@ -239,14 +243,15 @@ def run_comfy_job(
             effective_payload[key] = saved_import.get(saved_key) or ""
     payload = effective_payload
     csv_path = str(payload.get("csvPath") or "").strip()
-    if not csv_path:
+    direct = payload.get("inputMode") == "direct"
+    if not csv_path and not direct:
         raise RuntimeError("请提供 CSV 文件路径。")
 
     log("Checking ComfyUI health...")
     health = comfy_health(config)
     update_job(meta={"comfy_health": health})
     log("Loading CSV rows...")
-    rows = _load_csv_rows(csv_path, path_style=path_style)
+    rows = [{}] if direct else _load_csv_rows(csv_path, path_style=path_style)
     selected_rows = _select_csv_rows(rows, payload)
     update_job(
         meta={

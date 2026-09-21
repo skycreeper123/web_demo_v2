@@ -293,8 +293,6 @@ const els = {
   reloadComfyTemplatesBtn: document.getElementById("reloadComfyTemplatesBtn"),
   comfyTemplateSelect: document.getElementById("comfyTemplateSelect"),
   comfyTemplateDescription: document.getElementById("comfyTemplateDescription"),
-  applyComfyTemplateBindingsBtn: document.getElementById("applyComfyTemplateBindingsBtn"),
-  comfyBindingsPreview: document.getElementById("comfyBindingsPreview"),
   comfyWorkflowType: document.getElementById("comfyWorkflowType"),
   comfyOutputPrefix: document.getElementById("comfyOutputPrefix"),
   comfyParamsJson: document.getElementById("comfyParamsJson"),
@@ -302,8 +300,6 @@ const els = {
   comfyImageRootDir: document.getElementById("comfyImageRootDir"),
   comfyVideoRootDir: document.getElementById("comfyVideoRootDir"),
   comfyDefaultSeed: document.getElementById("comfyDefaultSeed"),
-  comfyWorkflowJson: document.getElementById("comfyWorkflowJson"),
-  comfyBindingsJson: document.getElementById("comfyBindingsJson"),
   cancelComfyJobBtn: document.getElementById("cancelComfyJobBtn"),
   retryComfyJobBtn: document.getElementById("retryComfyJobBtn"),
   retryFailedComfyJobBtn: document.getElementById("retryFailedComfyJobBtn"),
@@ -1014,13 +1010,6 @@ function selectedComfyTemplate() {
   return state.comfy.templates.find((template) => template.key === els.comfyTemplateSelect.value) || null;
 }
 
-function formatTemplateBindings(template) {
-  if (!template?.bindings || typeof template.bindings !== "object" || Array.isArray(template.bindings)) {
-    return "";
-  }
-  return JSON.stringify(template.bindings, null, 2);
-}
-
 function renderComfyTemplateDescription() {
   const template = selectedComfyTemplate();
   els.comfyTemplateDescription.textContent = template
@@ -1031,13 +1020,88 @@ function renderComfyTemplateDescription() {
       template.bindings_inferred ? "含自动推断绑定" : "",
       template.description || "无描述",
     ].filter(Boolean).join(" · ")
-    : "当前没有可用模板。你也可以直接在右侧填写 Workflow JSON 与 Bindings JSON。";
-  if (template && !els.comfyWorkflowType.value.trim()) {
+    : "当前没有可用模板。请将 API 格式工作流放入配置的 Workflow Dir，然后刷新模板。";
+  if (template) {
     els.comfyWorkflowType.value = template.workflow_type || "";
   }
-  const bindingsText = formatTemplateBindings(template);
-  els.comfyBindingsPreview.textContent = bindingsText || "当前模板没有显式 bindings。";
-  els.applyComfyTemplateBindingsBtn.disabled = !bindingsText;
+  renderComfyInputFields(template?.input_fields || []);
+}
+
+let comfyInputSchema = [];
+let comfyUploadsPending = 0;
+
+function renderComfyInputFields(fields) {
+  comfyInputSchema = fields;
+  const labels = {image_ref: "参考图片路径", video_ref: "输入视频路径", positive_prompt: "正向提示词", negative_prompt: "负向提示词", seed: "随机种子", output_prefix: "输出前缀"};
+  const fieldHtml = (field, index) => {
+    const media = ["image_ref", "video_ref"].includes(field.key);
+    const value = media || field.key === "output_prefix" ? "" : (field.default ?? "");
+    const attrs = `data-comfy-field="${index}"`;
+    const control = field.type === "bool"
+      ? `<select class="input" ${attrs}><option value="true" ${value === true ? "selected" : ""}>是</option><option value="false" ${value !== true ? "selected" : ""}>否</option></select>`
+      : field.type === "string" || !["int", "float"].includes(field.type)
+        ? `<textarea class="textarea comfy-field-text" ${attrs} rows="2" placeholder="${media ? "后端可访问的文件路径" : ""}">${escapeHtml(String(value))}</textarea>`
+        : `<input class="input" ${attrs} type="text" inputmode="decimal" value="${escapeHtml(String(value))}" />`;
+    const targets = field.targets.map(t => `${t.node}.${t.input}`).join(", ");
+    const upload = media ? `<input type="file" data-comfy-upload="${index}" accept="${field.key === "image_ref" ? ".png,.jpg,.jpeg,.webp,.bmp" : ".mp4,.mov,.avi,.mkv,.webm,.m4v"}" /><small data-upload-status="${index}">可上传文件，或填写上方路径（最大 1 GB）。</small>` : "";
+    return `<label class="prompt-field comfy-auto-field" data-comfy-search="${escapeHtml(`${field.label} ${field.key} ${targets}`.toLowerCase())}"><span>${escapeHtml(labels[field.key] || field.label)}${field.required ? " *" : ""}</span>${control}${upload}<small>${escapeHtml(field.key)} → ${escapeHtml(targets)}</small></label>`;
+  };
+  const basic = fields.map((f, i) => !f.advanced ? fieldHtml(f, i) : "").join("");
+  const advanced = fields.map((f, i) => f.advanced ? fieldHtml(f, i) : "").join("");
+  document.getElementById("comfyInputFields").innerHTML = fields.length
+    ? `<div class="form-grid">${basic}</div><details class="comfy-advanced"><summary>其他节点参数（${fields.filter(f => f.advanced).length}）</summary><input id="comfyFieldSearch" class="input" placeholder="搜索参数、节点名称或编号，例如 steps / 视频分辨率" aria-label="搜索节点参数" /><div class="form-grid">${advanced}</div></details>`
+    : `<p class="panel-note">未识别到可编辑输入，请选择有效的 API 格式工作流模板。</p>`;
+  document.querySelectorAll("[data-comfy-field]").forEach(control => { control.dataset.initialValue = control.value; });
+  document.getElementById("comfyFieldSearch")?.addEventListener("input", event => {
+    const query = event.target.value.trim().toLowerCase();
+    document.querySelectorAll(".comfy-advanced [data-comfy-search]").forEach(field => { field.hidden = !field.dataset.comfySearch.includes(query); });
+  });
+  document.querySelectorAll("[data-comfy-upload]").forEach(input => input.addEventListener("change", async () => {
+    const file = input.files[0];
+    if (!file) return;
+    const control = document.querySelector(`[data-comfy-field="${input.dataset.comfyUpload}"]`);
+    const status = document.querySelector(`[data-upload-status="${input.dataset.comfyUpload}"]`);
+    comfyUploadsPending++;
+    input.disabled = true;
+    status.textContent = "上传中…";
+    try {
+      if (file.size > 1024 ** 3) throw new Error("文件超过 1 GB，请填写后端可访问的路径。");
+      const response = await fetch("/api/comfy/upload", {method: "POST", headers: {"Content-Type": "application/octet-stream", "X-Filename": encodeURIComponent(file.name)}, body: file});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "上传失败");
+      control.value = data.path;
+      status.textContent = `已上传：${file.name}`;
+    } catch (error) { status.textContent = error.message; }
+    finally { comfyUploadsPending--; input.disabled = false; }
+  }));
+}
+
+function collectComfyFormInputs() {
+  if (comfyUploadsPending) throw new Error("请等待素材上传完成。");
+  if (!selectedComfyTemplate()) throw new Error("请先选择工作流模板。");
+  const values = {};
+  const direct = document.getElementById("comfyInputMode").value === "direct";
+  document.querySelectorAll("[data-comfy-field]").forEach(control => {
+    const field = comfyInputSchema[Number(control.dataset.comfyField)];
+    const changed = control.value !== control.dataset.initialValue;
+    const raw = control.value;
+    if (direct && field.required && !raw.trim()) throw new Error(`请填写：${field.label}`);
+    if (!changed && (field.key.startsWith("params.") || field.key === "seed" || field.key === "workflow_type")) return;
+    if (!changed && !raw) return;
+    let value = raw;
+    if (field.type === "bool") value = raw === "true";
+    if (field.type === "int") {
+      if (!/^-?\d+$/.test(raw)) throw new Error(`${field.label} 必须是整数`);
+      // Keep 64-bit seeds as strings until Python converts them to integers.
+    }
+    if (field.type === "float") {
+      value = Number(raw);
+      if (!raw.trim() || !Number.isFinite(value)) throw new Error(`${field.label} 必须是数字`);
+    }
+    if (field.type === "json") value = JSON.parse(raw);
+    values[field.key] = value;
+  });
+  return values;
 }
 
 function renderComfyTemplates(data) {
@@ -1046,7 +1110,7 @@ function renderComfyTemplates(data) {
   els.comfyTemplateMeta.textContent = normalizeDisplayPath(data.path) || "未找到模板目录";
 
   if (!state.comfy.templates.length) {
-    els.comfyTemplateSelect.innerHTML = `<option value="">无模板，可直接填写 Workflow JSON</option>`;
+    els.comfyTemplateSelect.innerHTML = `<option value="">无可用模板，请添加工作流后刷新</option>`;
     renderComfyTemplateDescription();
     return;
   }
@@ -1810,16 +1874,16 @@ function getComfyRunPayload() {
   const savedImport = state.comfy.config?.csv_import || {};
   return {
     templateKey: els.comfyTemplateSelect.value,
+    inputMode: document.getElementById("comfyInputMode").value,
+    formInputs: collectComfyFormInputs(),
     workflowType: els.comfyWorkflowType.value.trim(),
     csvPath: els.comfyCsvPath.value.trim() || savedImport.csv_path || "",
     imageRootDir: els.comfyImageRootDir.value.trim() || savedImport.image_root_dir || "",
     videoRootDir: els.comfyVideoRootDir.value.trim() || savedImport.video_root_dir || "",
     pathStyle: isPathStyleGroupChecked("comfy") ? "linux" : els.comfyPathStyle.value,
-    defaultSeed: seedText ? Number(seedText) : null,
+    defaultSeed: seedText || null,
     defaultOutputPrefixBase: els.comfyOutputPrefix.value.trim(),
     defaultParams: parseComfyParamsJson(),
-    workflowJsonText: els.comfyWorkflowJson.value.trim(),
-    bindingsJsonText: els.comfyBindingsJson.value.trim(),
   };
 }
 
@@ -1829,7 +1893,7 @@ async function startComfyJob() {
     els.comfyProgressText.textContent = "准备中";
     els.comfyProgressDetail.textContent = "正在提交到 ComfyUI。";
     const payload = getComfyRunPayload();
-    if (!payload.csvPath) {
+    if (payload.inputMode !== "direct" && !payload.csvPath) {
       throw new Error("请先填写 Prompt CSV 路径。");
     }
     const res = await fetch("/api/comfy/run", {
@@ -1849,20 +1913,6 @@ async function startComfyJob() {
     els.startComfyJobBtn.disabled = false;
     alert(error.message);
   }
-}
-
-function applySelectedTemplateBindings() {
-  const template = selectedComfyTemplate();
-  if (!template) {
-    alert("当前没有可用模板");
-    return;
-  }
-  const bindingsText = formatTemplateBindings(template);
-  if (!bindingsText) {
-    alert("当前模板没有显式 bindings");
-    return;
-  }
-  els.comfyBindingsJson.value = bindingsText;
 }
 
 function buildCsvRow(values) {
@@ -2726,7 +2776,6 @@ function bindEvents() {
   els.videoUseMock.addEventListener("change", () => setModuleModeBadge(els.videoApiKey, els.videoUseMock, els.videoModeBadge));
 
   els.comfyTemplateSelect.addEventListener("change", renderComfyTemplateDescription);
-  els.applyComfyTemplateBindingsBtn.addEventListener("click", applySelectedTemplateBindings);
   els.comfyOutputDir.addEventListener("input", () => {
     els.comfyOutputRootValue.textContent = normalizeDisplayPath(els.comfyOutputDir.value.trim()) || "未设置";
   });

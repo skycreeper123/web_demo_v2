@@ -12,8 +12,8 @@
   "workflow_manifest_dir": "workflow",
   "csv_import": {
     "csv_path": "/root/Desktop/web_demo_v2/output/20260905_205836_631/prompts.csv",
-    "image_root_dir": "/root/Desktop/web_demo_v2/test_image/",
-    "video_root_dir": "/root/Desktop/web_demo_v2/test_video/",
+    "image_root_dir": "/root/Desktop/web_demo_v2/test_image",
+    "video_root_dir": "/root/Desktop/web_demo_v2/test_video",
     "path_style": ""
   }
 }
