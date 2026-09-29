@@ -784,6 +784,9 @@ class DemoHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
 
+        if path == "/api/health":
+            return text_response(self, HTTPStatus.OK, "prompt-tool-ready", "text/plain; charset=utf-8")
+
         # 静态资源入口。
         if path == "/":
             return self._serve_frontend("index.html", "text/html; charset=utf-8")

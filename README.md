@@ -108,6 +108,11 @@ http://127.0.0.1:8000
 Windows:
 
 - 双击 `PromptToolLauncher.exe`
+- 启动后保留日志终端，服务就绪后自动打开浏览器；关闭终端或按 `Ctrl+C` 会停止服务。
+- 启动器检查 Python 3.10+，优先使用 `.venv`，环境不可用时尝试系统 `python` / `py -3`。
+- 启动错误和后端标准输出保存在 `logs/launcher.log`；失败时窗口保留错误，按回车关闭。端口被其他程序占用时会明确提示。
+- EXE 需要和 `backend/`、`frontend/` 放在一起，不包含 Python 环境。移动项目后若 `.venv` 失效，需要重建虚拟环境。
+- 修改启动器后运行 `powershell -ExecutionPolicy Bypass -File .\build_launcher.ps1` 重新生成 EXE。
 
 Linux:
 

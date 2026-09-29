@@ -61,6 +61,8 @@ http://127.0.0.1:8000
 Windows：
 
 - 双击 `PromptToolLauncher.exe`
+- 会显示日志终端，服务就绪后自动打开浏览器。请保持终端打开，关闭窗口或按 `Ctrl+C` 会停止服务。
+- 启动失败时查看终端和 `logs/launcher.log`，其中包含 Python 检查结果和后端异常；按回车关闭错误窗口。
 
 Linux：
 
