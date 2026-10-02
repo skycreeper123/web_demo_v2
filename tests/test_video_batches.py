@@ -431,6 +431,27 @@ class VideoBatchTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             batches.create_batch(payload)
 
+    def test_failed_frame_rate_validation_retries_only_export_for_every_group(self):
+        batch = self.create(2)
+
+        def fail_export(flow, step, *args):
+            if step["id"] == "finish":
+                raise RuntimeError("合成视频帧率与原视频不一致：目标 30 fps，实际 29.94 fps。")
+            return self.execute(flow, step, *args)
+
+        self.run_batch(batch, execute=fail_export)
+        failed = batches.get_batch(batch["id"])
+        self.assertEqual(failed["failed"], 2)
+        for row in failed["rows"]:
+            self.assertEqual([step["status"] for step in flows.get_flow(row["flowId"])["steps"]],
+                             ["completed", "completed", "failed"])
+        self.calls.clear()
+        self.run_batch(batch, retry_failed=True, job_id="fixed-fps-export")
+        self.assertEqual(self.calls, [(row["flowId"], "finish") for row in failed["rows"]])
+        self.assertEqual(batches.get_batch(batch["id"])["completed"], 2)
+        for row in failed["rows"]:
+            self.assertEqual([step["attempts"] for step in flows.get_flow(row["flowId"])["steps"]], [1, 1, 2])
+
     def test_empty_batch_is_rejected_before_creation(self):
         payload = self.payload(1)
         with self.assertRaises(ValueError):

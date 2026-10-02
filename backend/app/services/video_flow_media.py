@@ -8,6 +8,7 @@ never modified. Durations are necessarily accurate to the nearest video frame.
 from __future__ import annotations
 
 import math
+from fractions import Fraction
 from pathlib import Path
 import subprocess
 from typing import Any
@@ -55,6 +56,20 @@ def _number(value: float) -> str:
     return format(float(value), ".12g")
 
 
+def _frame_rate(meta: dict[str, Any]) -> Fraction:
+    fps = float(meta["fps"])
+    if not math.isfinite(fps) or fps <= 0:
+        raise ValueError("视频帧率必须是大于 0 的有效数值。")
+    # Preserve rates such as 30000/1001 and 1197/40 (29.925), rather than
+    # rounding all near-30 inputs to 30. The same rate drives every stage.
+    return Fraction(str(fps)).limit_denominator(1_000_000)
+
+
+def _fps_argument(meta: dict[str, Any]) -> str:
+    rate = _frame_rate(meta)
+    return str(rate.numerator) if rate.denominator == 1 else f"{rate.numerator}/{rate.denominator}"
+
+
 def _timeline(meta: dict[str, Any], direction: str, cut_seconds: float) -> tuple[float, float, float]:
     if direction not in {"prefix", "suffix"}:
         raise ValueError("替换方向必须为 prefix（前段）或 suffix（后段）。")
@@ -92,17 +107,17 @@ def _run_ffmpeg(arguments: list[str], *, duration: float, action: str) -> None:
     timeout = min(7200, max(120, math.ceil(duration * 30) + 60))
     command = [_get_ffmpeg_executable(), "-nostdin", "-hide_banner", "-loglevel", "error", "-n", *arguments]
     try:
-        result = subprocess.run(
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            check=False,
-        )
+        options = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                       text=True, encoding="utf-8", errors="replace", timeout=timeout, check=False)
+        result = subprocess.run(command, **options)
+        # Older system FFmpeg may be used when imageio's binary is unavailable.
+        # Retry only a rejected option (before encoding started), using its
+        # equivalent legacy spelling for this single-video-output command.
+        error = (result.stderr or "").lower()
+        if result.returncode and "-fps_mode:v" in command and "unrecognized option 'fps_mode" in error:
+            compatible = list(command)
+            compatible[compatible.index("-fps_mode:v")] = "-vsync"
+            result = subprocess.run(compatible, **options)
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"{action}超时（{timeout} 秒），请检查视频长度或服务器负载。") from exc
     except OSError as exc:
@@ -115,7 +130,14 @@ def _run_ffmpeg(arguments: list[str], *, duration: float, action: str) -> None:
 def _video_encoding(meta: dict[str, Any]) -> list[str]:
     # yuv444p keeps unusual odd source dimensions without silently changing them.
     pixel_format = "yuv420p" if int(meta["width"]) % 2 == 0 and int(meta["height"]) % 2 == 0 else "yuv444p"
+    rate = _frame_rate(meta)
+    # FPS in a filter alone does not explicitly constrain the encoder/muxer.
+    # Use CFR and matching encoder/MP4 clocks, with whole ticks per frame.
+    timescale = rate.numerator * max(1, (10000 + rate.numerator - 1) // rate.numerator)
     return ["-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", pixel_format,
+            "-r:v", _fps_argument(meta), "-fps_mode:v", "cfr",
+            "-enc_time_base:v", f"{rate.denominator}/{rate.numerator}",
+            "-video_track_timescale", str(timescale),
             "-map_metadata", "-1", "-movflags", "+faststart"]
 
 
@@ -171,7 +193,7 @@ def prepare_temporal(
     try:
         _run_ffmpeg(
             ["-i", str(source), "-map", "0:v:0", "-an", "-vf",
-             f"trim=start={_number(start)}:end={_number(end)},setpts=PTS-STARTPTS,fps={_number(meta['fps'])}",
+             f"trim=start={_number(start)}:end={_number(end)},setpts=PTS-STARTPTS,fps={_fps_argument(meta)}",
              "-t", _number(retained_duration), *_video_encoding(meta), str(temporary)],
             duration=float(meta["duration"]), action="裁切保留视频片段",
         )
@@ -208,7 +230,7 @@ def _normalized_filter(
     return (
         f"setpts=(PTS-STARTPTS)*{_number(factor)},"
         f"{geometry}"
-        f"fps={_number(source_meta['fps'])},"
+        f"fps={_fps_argument(source_meta)},"
         f"tpad=stop_mode=clone:stop_duration={_number(duration)},"
         f"trim=duration={_number(duration)},setpts=PTS-STARTPTS"
     )
@@ -239,18 +261,34 @@ def _render_final(
     try:
         _run_ffmpeg(arguments, duration=duration, action="合成替换视频")
         result_meta = probe_video(temporary)
-        tolerance = max(2 / float(source_meta["fps"]), 0.075)
+        target_fps = float(_frame_rate(source_meta))
+        actual_fps = float(result_meta["fps"])
+        fps_difference = abs(actual_fps - target_fps)
+        details = (f"目标帧率 {target_fps:.9g} fps，实际 {actual_fps:.9g} fps；"
+                   f"原片 {source_meta['frames']} 帧，成片 {result_meta['frames']} 帧；"
+                   f"目标时长 {duration:.9g} 秒，实际 {result_meta['duration']:.9g} 秒")
+        tolerance = max(2 / target_fps, 0.075)
         if abs(float(result_meta["duration"]) - duration) > tolerance:
-            raise RuntimeError("合成视频时长与原视频不一致，请检查输入视频时间信息。")
+            raise RuntimeError(f"合成视频时长与原视频不一致：{details}。")
         if (result_meta["width"], result_meta["height"]) != (source_meta["width"], source_meta["height"]):
-            raise RuntimeError("合成视频尺寸与原视频不一致。")
-        if not math.isclose(float(result_meta["fps"]), float(source_meta["fps"]), rel_tol=0.001, abs_tol=0.001):
-            raise RuntimeError("合成视频帧率与原视频不一致。")
+            raise RuntimeError(f"合成视频尺寸与原视频不一致：目标 {source_meta['width']}×{source_meta['height']}，"
+                               f"实际 {result_meta['width']}×{result_meta['height']}；{details}。")
+        # OpenCV/container average FPS may differ because of a final sample's
+        # duration. Accept only a small (<1%) discrepancy accumulating to at
+        # most one frame, with the independently reported frame count matching.
+        frame_rounding_only = (
+            fps_difference <= target_fps * 0.01
+            and fps_difference * duration <= 1 + 1e-6
+            and abs(int(result_meta["frames"]) - round(duration * target_fps)) <= 1
+        )
+        if not math.isclose(actual_fps, target_fps, rel_tol=0.001, abs_tol=0.001) and not frame_rounding_only:
+            raise RuntimeError(f"合成视频帧率与原视频不一致：{details}。")
         temporary.replace(output)
     finally:
         temporary.unlink(missing_ok=True)
     return {"path": str(output), "output_video": str(output), **result_meta,
-            "source_duration": duration, "keep_audio": bool(keep_audio)}
+            "source_duration": duration, "source_fps": target_fps,
+            "fps_rational": _fps_argument(source_meta), "keep_audio": bool(keep_audio)}
 
 
 def assemble_video(
@@ -277,7 +315,7 @@ def assemble_video(
         f"[0:v:0]{retained_filter}[retained];"
         f"[1:v:0]{generated_filter}[generated];"
         f"{order}concat=n=2:v=1:a=0,"
-        f"fps={_number(source_meta['fps'])},"
+        f"fps={_fps_argument(source_meta)},"
         f"tpad=stop_mode=clone:stop_duration={_number(2 / float(source_meta['fps']))},"
         f"trim=duration={_number(source_meta['duration'])},setpts=PTS-STARTPTS[video]"
     )

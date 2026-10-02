@@ -669,6 +669,10 @@ Comfy 新增 `start_image_ref / end_image_ref`，分别来自表单或 CSV 的 `
 
 V5 的前后景选择映射为 RMBG `invert_output`，新流程关闭 77 帧加载上限。I2V 使用 16fps，帧数向上选择 `4n+1`；成片阶段将生成段时长匹配待替换区间。固定 V5 模板先将源画面非等比缩放成方形，因此空间结果通过直接缩放到原片宽高反向还原；时间替换的生成片段仍使用等比缩放补边。混合任务先将空间结果匹配原片时间轴，再进行裁切。新媒体路径统一原片帧率和尺寸，可映射原片音轨；不改动旧剪辑工作台预设。
 
+媒体导出将 OpenCV 读取的帧率还原为有理数，滤镜 `fps`、编码 `-r:v` 与 `-enc_time_base:v` 使用同一帧率，显式指定 `-fps_mode:v cfr`；MP4 轨道 timescale 取帧率分子的整数倍，确保每帧对应整数 ticks。保留 `30000/1001`、`1197/40` 等速率；可变帧率素材按已读取的平均帧率归一为恒定帧率。若旧版系统 FFmpeg 在开始编码前明确拒绝 `fps_mode` 选项，则仅将该选项替换为 `-vsync cfr` 重试；其他编码错误直接报告。参数语义参见 [FFmpeg 编码与帧率选项](https://ffmpeg.org/ffmpeg.html#Advanced-options) 和 [MP4 timescale](https://ffmpeg.org/ffmpeg-formats.html)。
+
+输出独立检查时长、尺寸和帧率。超过原有 0.1% 帧率阈值时，只有相对差不超过 1%、累计差不超过一帧且输出帧数与目标相差不超过一帧，才按容器平均帧率的取整差异接受；不会将 30→16/25 等实质失配视作成功。错误包含目标/实际 FPS、帧数、时长。媒体测试独立模拟源文件和输出元数据，覆盖非整数/VFR 平均速率以及通过、拒绝两类校验结果。
+
 每次执行自动 Prompt 生成时，按步骤 `settings.apiKind` 读取对应模块已保存的 API 配置以及 Prompt 配置中的 `system_prompt / user_text`。`video` 用于空间替换、`image_edit` 用于新首图、`image` 用于首尾帧过渡。以模块的 System Prompt 和 User Prompt 为基础，在 User Prompt 末尾追加本步任务范围、实际媒体顺序和时长；双图提示词同时输入首尾两张图。明确禁止 Mock 回退。手动保存正向提示词后可绕过该步的 LLM 调用。
 
 配置在实际调用模型时读取，流程创建时不固化全局配置副本。修改全局配置不会自动作废已经生成的 Prompt 或下游产物；用户需重跑相应提示词步骤及后续步骤。`promptEdited` 保留手工提示词优先规则：已手动保存的正向文字继续使用，如需重新调用模型须清空并保存该步正向提示词。前端每个提示词步骤显示配置来源，并将 `image / image_edit / video` 分别导航到原工作台的 `image / imageEdit / video` 子模块。
