@@ -153,6 +153,11 @@
       <div class="flow-workspace">
         <aside class="flow-sidebar">
           <article class="card panel">
+            <div class="section-header"><h2>我的批次</h2><button id="batchNewBtn" class="btn btn-primary" type="button">新建批次</button></div>
+            <div class="flow-history-tools"><span class="panel-note">同一种流程，批量处理素材</span><button id="batchRefreshListBtn" class="btn btn-ghost" type="button">刷新</button></div>
+            <div id="batchHistory" class="flow-history batch-history" aria-label="已保存的视频批次"><p class="panel-note">进入后加载批次。</p></div>
+          </article>
+          <article class="card panel">
             <div class="section-header"><h2>我的流程</h2><button id="flowNewBtn" class="btn btn-primary" type="button">新建</button></div>
             <div class="flow-history-tools"><span class="panel-note">流程保存在服务器</span><button id="flowRefreshListBtn" class="btn btn-ghost" type="button">刷新</button></div>
             <div id="flowHistory" class="flow-history" aria-label="已保存的视频流程"><p class="panel-note">进入后加载流程。</p></div>
@@ -162,8 +167,9 @@
         <div class="flow-main">
           <div id="flowNotice" class="flow-notice" role="status" aria-live="polite" hidden></div>
           <article id="flowCreatePanel" class="card panel">
-            <div class="section-header"><div><p class="panel-kicker">Create a Flow</p><h2>创建视频流程</h2></div><span class="chip chip-soft">一条原视频，一个流程</span></div>
+            <div class="section-header"><div><p class="panel-kicker">Create a Flow</p><h2 id="flowCreateTitle">创建视频流程</h2></div><span id="flowCreateBadge" class="chip chip-soft">一条原视频，一个流程</span></div>
             <form id="flowCreateForm">
+              <label class="prompt-field"><span>输入方式</span><select id="flowInputMode" class="input"><option value="single">单条素材</option><option value="batch">CSV 批量素材 · 每行一组</option></select></label>
               <div class="form-grid">
                 <label class="prompt-field"><span>流程名称（可选）</span><input id="flowName" class="input" maxlength="120" placeholder="例如：镜头 01 · 前段替换" /></label>
                 <label class="prompt-field"><span>替换方式</span><select id="flowMode" class="input"><option value="spatial">局部空间替换</option><option value="prefix">局部时间 · 替换前段</option><option value="suffix">局部时间 · 替换后段</option><option value="mixed">混合替换 · 先空间后时间</option></select></label>
@@ -171,8 +177,19 @@
                 <label id="flowTemporalField" class="prompt-field" hidden><span>随后替换哪一段</span><select id="flowTemporalMode" class="input"><option value="prefix">替换前段</option><option value="suffix">替换后段</option></select></label>
               </div>
               <div id="flowRecipe" class="flow-recipe"></div>
+              <section id="batchImportPanel" class="batch-import-panel" hidden>
+                <div class="section-header"><div><h2>导入素材表</h2><p class="panel-note">一行对应一组素材，共用上方流程类型。填写服务器可读取的完整文件路径。</p></div><button id="batchTemplateBtn" class="btn btn-ghost" type="button">下载 CSV 模板</button></div>
+                <label class="flow-upload-label">选择 UTF-8 CSV 文件<input id="batchCsvFile" type="file" accept=".csv,text/csv" /></label>
+                <label class="prompt-field"><span>或粘贴、编辑 CSV 内容</span><textarea id="batchCsvText" class="textarea batch-csv-text" rows="5" spellcheck="false" placeholder="name,videoPath,referenceImagePath,startImagePath,endImagePath,cutSeconds,editInstruction"></textarea></label>
+                <div class="flow-create-footer"><p class="panel-note">每批 1–500 组。CSV 非空字段优先，空白字段继承下方统一参数。需保留 videoPath 列，原视频可逐行填写或使用统一素材。支持引号内逗号、换行及 UTF-8 BOM。</p><button id="batchParseBtn" class="btn btn-ghost" type="button">解析并预览</button></div>
+                <div id="batchCsvSummary" class="flow-notice" role="status" aria-live="polite">尚未导入素材表。</div>
+                <div id="batchCsvErrors" class="flow-error" role="alert" hidden></div>
+                <div id="batchCsvPreview" class="batch-table-wrap" hidden></div>
+                <p class="panel-note">只检查表格与必填项；创建时由服务器检查文件。批次按组串行执行，一组失败继续处理下一组。</p>
+              </section>
+              <p id="batchDefaultsHint" class="panel-note" hidden>统一默认素材与参数（可选）：CSV 留空时继承这里的值。不同组可使用不同图片、切点和编辑需求。</p>
               <div class="flow-media-fields">
-                <div class="flow-source-field"><label class="prompt-field" for="flowVideoPath"><span>原视频 <span aria-hidden="true">*</span></span><input id="flowVideoPath" class="input" required placeholder="服务器上的完整视频路径，例如 /data/source.mp4" /></label><label class="flow-upload-label">或上传视频<input id="flowVideoUpload" type="file" accept=".mp4,.mov,.avi,.mkv,.webm,.m4v" data-flow-upload="flowVideoPath" /></label><small id="flowVideoPathUploadStatus" class="panel-note">单文件最大 1 GB。</small><div id="flowVideoPathPreview" class="flow-source-preview"></div></div>
+                <div id="flowVideoField" class="flow-source-field"><label class="prompt-field" for="flowVideoPath"><span>原视频 <span aria-hidden="true">*</span></span><input id="flowVideoPath" class="input" required placeholder="服务器上的完整视频路径，例如 /data/source.mp4" /></label><label class="flow-upload-label">或上传视频<input id="flowVideoUpload" type="file" accept=".mp4,.mov,.avi,.mkv,.webm,.m4v" data-flow-upload="flowVideoPath" /></label><small id="flowVideoPathUploadStatus" class="panel-note">单文件最大 1 GB。</small><div id="flowVideoPathPreview" class="flow-source-preview"></div></div>
                 <div id="flowReferenceField" class="flow-source-field"><label class="prompt-field" for="flowReferencePath"><span>空间替换参考图 <span aria-hidden="true">*</span></span><input id="flowReferencePath" class="input" placeholder="参考人物或背景图片的完整路径" /></label><label class="flow-upload-label">或上传参考图<input type="file" accept=".png,.jpg,.jpeg,.webp,.bmp" data-flow-upload="flowReferencePath" /></label><small id="flowReferencePathUploadStatus" class="panel-note"></small><div id="flowReferencePathPreview" class="flow-source-preview"></div></div>
                 <div id="flowStartField" class="flow-source-field" hidden><label class="prompt-field" for="flowStartPath"><span>新首图（可选）</span><input id="flowStartPath" class="input" placeholder="已有新首图可填写；留空由 Qwen 根据原首帧生成" /></label><label class="flow-upload-label">或上传新首图<input type="file" accept=".png,.jpg,.jpeg,.webp,.bmp" data-flow-upload="flowStartPath" /></label><small id="flowStartPathUploadStatus" class="panel-note">留空时，请在下方描述新首图和运动需求。</small><div id="flowStartPathPreview" class="flow-source-preview"></div></div>
                 <div id="flowEndField" class="flow-source-field" hidden><label class="prompt-field" for="flowEndPath"><span>目标尾图 <span aria-hidden="true">*</span></span><input id="flowEndPath" class="input" placeholder="替换后段结束时的目标图片路径" /></label><label class="flow-upload-label">或上传目标尾图<input type="file" accept=".png,.jpg,.jpeg,.webp,.bmp" data-flow-upload="flowEndPath" /></label><small id="flowEndPathUploadStatus" class="panel-note"></small><div id="flowEndPathPreview" class="flow-source-preview"></div></div>
@@ -183,15 +200,26 @@
               </div>
               <label class="prompt-field"><span>编辑需求</span><textarea id="flowInstruction" class="textarea flow-instruction" rows="3" placeholder="描述替换内容、新首图的画面和动作，或首尾画面之间的运动方向。"></textarea></label>
               <div class="flow-create-footer"><label class="toggle"><input id="flowKeepAudio" type="checkbox" checked /> 保留原视频声音</label><button id="flowCreateBtn" class="btn btn-primary" type="submit">创建流程</button></div>
-              <p class="panel-note">创建只保存素材与步骤。点击执行后才开始生成。</p>
+              <p id="flowCreateNote" class="panel-note">创建只保存素材与步骤。点击执行后才开始生成。</p>
             </form>
           </article>
+          <section id="batchDetail" hidden>
+            <article class="card panel flow-summary">
+              <div class="section-header"><div><p class="panel-kicker">Video Batch</p><h2 id="batchDetailTitle">视频批次</h2><p id="batchDetailMeta" class="panel-note"></p></div><span id="batchStatus" class="flow-status"></span></div>
+              <div class="progress-track"><div id="batchProgress" class="progress-fill"></div></div><p id="batchProgressText" class="panel-note" aria-live="polite"></p>
+              <div class="batch-counts"><span>总计 <strong id="batchTotal">0</strong></span><span>成功 <strong id="batchCompleted">0</strong></span><span>失败 <strong id="batchFailed">0</strong></span><span>待处理 <strong id="batchPending">0</strong></span></div>
+              <div class="flow-run-actions"><button id="batchRunBtn" class="btn btn-primary" type="button">开始 / 继续</button><button id="batchRetryBtn" class="btn btn-ghost" type="button">仅重试失败</button><button id="batchStopBtn" class="btn btn-ghost" type="button" hidden>当前步骤后停止</button><button id="batchRefreshBtn" class="btn btn-ghost" type="button">刷新状态</button><a id="batchManifestLink" class="btn btn-ghost" hidden>下载汇总 CSV</a></div>
+              <p id="batchRunHint" class="panel-note">按组串行执行；一组失败后继续下一组。</p><p id="batchReviewNotice" class="flow-error" role="alert" hidden></p><p id="batchError" class="flow-error" role="alert" hidden></p>
+            </article>
+            <article class="card panel"><div class="section-header"><h2>素材与执行结果</h2><span class="chip chip-soft">每组可打开单流程</span></div><div id="batchRows" class="batch-table-wrap"></div></article>
+            <article class="card panel"><details><summary>批次运行日志</summary><pre id="batchLogs" class="log-box">执行后显示批次日志。</pre></details></article>
+          </section>
           <section id="flowDetail" hidden>
             <article class="card panel flow-summary">
               <div class="section-header"><div><p class="panel-kicker">Saved Flow</p><h2 id="flowDetailTitle">视频流程</h2><p id="flowDetailMeta" class="panel-note"></p></div><span id="flowStatus" class="flow-status"></span></div>
               <div class="progress-track"><div id="flowProgress" class="progress-fill"></div></div>
               <p id="flowProgressText" class="panel-note" aria-live="polite"></p>
-              <div class="flow-run-actions"><button id="flowNextBtn" class="btn btn-primary" type="button">执行下一步</button><button id="flowRunAllBtn" class="btn btn-ghost" type="button">连续执行</button><button id="flowStopBtn" class="btn btn-ghost" type="button" hidden>当前步骤结束后停止</button><button id="flowRefreshBtn" class="btn btn-ghost" type="button">刷新状态</button></div>
+              <div class="flow-run-actions"><button id="flowNextBtn" class="btn btn-primary" type="button">执行下一步</button><button id="flowRunAllBtn" class="btn btn-ghost" type="button">连续执行</button><button id="flowStopBtn" class="btn btn-ghost" type="button" hidden>当前步骤结束后停止</button><button id="flowRefreshBtn" class="btn btn-ghost" type="button">刷新状态</button><button id="flowBackBatchBtn" class="btn btn-ghost" type="button" hidden>返回所属批次</button></div>
               <p id="flowRunHint" class="panel-note"></p>
               <details class="flow-input-details"><summary>查看本次素材与需求</summary><div id="flowInputSummary"></div></details>
             </article>
@@ -1184,5 +1212,6 @@
 
   <script src="/app.js"></script>
   <script src="/video-flows.js"></script>
+  <script src="/video-batches.js"></script>
 </body>
 </html>

@@ -11,9 +11,16 @@
     image_edit: {view: "imageEdit", label: "图片 → 图生图 Prompt"},
     video: {view: "video", label: "视频 → 视频编辑 Prompt"},
   };
-  const flowState = {list: [], flow: null, timer: null, busy: false, uploads: 0, request: 0, drafts: new Map(), previews: new Map(), initialized: false};
+  const flowState = {list: [], flow: null, timer: null, busy: false, uploads: 0, request: 0, drafts: new Map(), previews: new Map(), initialized: false, panel: "create"};
   const store = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
   const stored = key => { try { return localStorage.getItem(key) || ""; } catch { return ""; } };
+  try {
+    const savedDrafts = JSON.parse(sessionStorage.getItem("video-flows:prompt-drafts") || "[]");
+    if (Array.isArray(savedDrafts)) for (const [key, value] of savedDrafts) {
+      if (typeof key === "string" && value && ["prompt", "negativePrompt", "instruction"].every(field => typeof value[field] === "string")) flowState.drafts.set(key, value);
+    }
+  } catch {}
+  const savePromptDrafts = () => { try { sessionStorage.setItem("video-flows:prompt-drafts", JSON.stringify([...flowState.drafts])); } catch {} };
   const notice = (message = "", error = false) => {
     $("flowNotice").hidden = !message;
     $("flowNotice").textContent = message;
@@ -37,22 +44,27 @@
   const hasDrafts = () => !!flowState.flow && [...flowState.drafts.keys()].some(key => key.startsWith(`${flowState.flow.id}:`));
   const isRunning = () => flowState.flow?.status === "running" || flowState.flow?.steps?.some(step => step.status === "running");
   const temporalMode = () => $("flowMode").value === "mixed" ? $("flowTemporalMode").value : $("flowMode").value;
+  const batchInput = () => $("flowInputMode").value === "batch";
 
   function updateCreateFields() {
     const mode = $("flowMode").value;
     const temporal = temporalMode();
     const spatial = ["spatial", "mixed"].includes(mode);
     const timed = mode !== "spatial";
+    const batch = batchInput();
+    $("flowVideoField").hidden = false;
+    $("flowVideoPath").required = !batch;
     $("flowSpatialField").hidden = !spatial;
     $("flowReferenceField").hidden = !spatial;
-    $("flowReferencePath").required = spatial;
+    $("flowReferencePath").required = spatial && !batch;
     $("flowTemporalField").hidden = mode !== "mixed";
     $("flowStartField").hidden = !timed || temporal !== "prefix";
     $("flowEndField").hidden = !timed || temporal !== "suffix";
-    $("flowEndPath").required = timed && temporal === "suffix";
+    $("flowEndPath").required = timed && temporal === "suffix" && !batch;
     $("flowCutField").hidden = !timed;
-    $("flowCutSeconds").required = timed;
+    $("flowCutSeconds").required = timed && !batch;
     $("flowCutSeconds").disabled = !timed;
+    $("flowCutSeconds").min = batch ? "" : "0.001";
     const sequence = [];
     if (spatial) sequence.push($("flowSpatialTarget").value === "background" ? "替换背景" : "替换前景");
     if (timed) {
@@ -64,6 +76,7 @@
     $("flowPromptSourceHint").textContent = $("flowPromptSource").value === "manual"
       ? "创建后检查并修改各步提示词，保存后再执行。"
       : "每次自动生成读取对应模块已保存的 API、System Prompt 与 User Prompt，并在 User Prompt 末尾补充任务范围、素材顺序和时长。不使用模拟结果。";
+    document.dispatchEvent(new CustomEvent("video-flows:settingschange"));
   }
 
   function dateLabel(value) {
@@ -81,7 +94,7 @@
   }
   async function loadHistory() {
     const data = await api("/api/video-flows");
-    flowState.list = data.flows || [];
+    flowState.list = (data.flows || []).filter(flow => !flow.batchId);
     renderHistory();
   }
 
@@ -139,15 +152,16 @@
   function updateControls() {
     const flow = flowState.flow;
     if (!flow) return;
-    const running = isRunning();
+    const running = isRunning() || !!flow.batchLocked;
     const dirty = hasDrafts();
     const unfinished = (flow.steps || []).some(step => step.status !== "completed");
     $("flowNextBtn").disabled = flowState.busy || running || dirty || !unfinished;
     $("flowRunAllBtn").disabled = flowState.busy || running || dirty || !unfinished;
-    $("flowStopBtn").hidden = !running;
+    $("flowStopBtn").hidden = !running || !!flow.batchLocked;
     $("flowStopBtn").disabled = flowState.busy || !!flow.stopRequested;
     $("flowStopBtn").textContent = flow.stopRequested ? "已请求在本步结束后停止" : "当前步骤结束后停止";
-    $("flowRunHint").textContent = dirty ? "有尚未保存的修改，请保存后再执行。" : running
+    $("flowBackBatchBtn").hidden = !flow.batchId;
+    $("flowRunHint").textContent = flow.batchLocked ? "所属批次正在运行，本流程只读。可返回批次查看总进度或请求停止。" : dirty ? "有尚未保存的修改，请保存后再执行。" : running
       ? flow.stopRequested ? "停止请求已保存；当前生成完成后，不再启动后续步骤。" : "执行中，可查看中间结果。停止只在当前步骤结束后生效。"
       : !unfinished ? "所有步骤已完成。可预览或下载最终结果。" : "下一步只执行一个步骤；连续执行会依次运行剩余步骤。";
     document.querySelectorAll("[data-step-run]").forEach(button => {
@@ -161,6 +175,7 @@
   }
   function renderFlow(flow, changed = false) {
     flowState.flow = flow;
+    flowState.panel = "single";
     $("flowCreatePanel").hidden = true;
     $("flowDetail").hidden = false;
     $("flowDetailTitle").textContent = flow.name || modes[flow.mode] || "视频流程";
@@ -209,18 +224,20 @@
       $("flowResults").innerHTML = finalOutputs.map(mediaCard).join("");
       $("flowResults").dataset.signature = resultSignature;
     }
-    const listIndex = flowState.list.findIndex(item => item.id === flow.id);
-    if (listIndex >= 0) flowState.list[listIndex] = {...flowState.list[listIndex], ...flow};
-    else flowState.list.unshift(flow);
+    if (!flow.batchId) {
+      const listIndex = flowState.list.findIndex(item => item.id === flow.id);
+      if (listIndex >= 0) flowState.list[listIndex] = {...flowState.list[listIndex], ...flow};
+      else flowState.list.unshift(flow);
+    }
     renderHistory();
     updateControls();
   }
 
   async function refreshFlow({initial = false} = {}) {
     const flow = flowState.flow;
-    if (!flow) return;
+    if (!flow || flowState.panel !== "single") return;
     const data = await api(endpoint(flow));
-    if (flowState.flow?.id !== flow.id) return;
+    if (flowState.flow?.id !== flow.id || flowState.panel !== "single") return;
     if (Number(data.flow.updatedAt) < Number(flowState.flow.updatedAt)) return;
     renderFlow(data.flow, initial);
     if (data.flow.error) notice(data.flow.error, true);
@@ -236,20 +253,23 @@
   function startPolling() {
     stopPolling();
     const tick = async () => {
-      if ($("videoFlowsView").hidden || !flowState.flow) return;
+      if ($("videoFlowsView").hidden || !flowState.flow || flowState.panel !== "single") return;
       try { await refreshFlow(); }
       catch (error) { notice(`状态读取失败：${error.message}。稍后会自动重试。`, true); }
-      if (!$('videoFlowsView').hidden && flowState.flow) flowState.timer = setTimeout(tick, isRunning() ? 2000 : 6000);
+      if (!$('videoFlowsView').hidden && flowState.flow && flowState.panel === "single") flowState.timer = setTimeout(tick, isRunning() || flowState.flow.batchLocked ? 2000 : 6000);
     };
     flowState.timer = setTimeout(tick, 1500);
   }
   async function openFlow(id) {
     const request = ++flowState.request;
+    flowState.panel = "single";
+    document.dispatchEvent(new CustomEvent("video-flows:show", {detail: {panel: "single"}}));
     stopPolling();
     notice();
     const data = await api(`/api/video-flows/${encodeURIComponent(id)}`);
     if (request !== flowState.request) return;
     store("video-flows:selected", id);
+    store("video-workspace:selection", "single");
     renderFlow(data.flow, true);
     if (data.flow.error) notice(data.flow.error, true);
     await refreshFlow();
@@ -259,6 +279,9 @@
     ++flowState.request;
     stopPolling();
     flowState.flow = null;
+    flowState.panel = "create";
+    store("video-workspace:selection", "create");
+    document.dispatchEvent(new CustomEvent("video-flows:show", {detail: {panel: "create"}}));
     store("video-flows:selected", "");
     $("flowCreatePanel").hidden = false;
     $("flowDetail").hidden = true;
@@ -274,7 +297,7 @@
     const flowId = flowState.flow?.id;
     try {
       const result = await action();
-      if (flowState.flow?.id === flowId && result?.flow) {
+      if (flowState.flow?.id === flowId && flowState.panel === "single" && result?.flow) {
         renderFlow(result.flow);
         startPolling();
       }
@@ -284,12 +307,12 @@
   }
   async function runStep(stepId, runAll) {
     const flow = flowState.flow;
-    if (!flow || isRunning() || hasDrafts()) return;
+    if (!flow || isRunning() || flow.batchLocked || hasDrafts()) return;
     await mutate(() => api(`${endpoint(flow)}/run`, {runAll: !!runAll, ...(stepId ? {stepId} : {})}));
   }
   async function saveStep(stepId) {
     const flow = flowState.flow;
-    if (!flow) return;
+    if (!flow || flow.batchLocked) return;
     const key = draftKey(flow.id, stepId);
     const draft = flowState.drafts.get(key);
     if (!draft) return;
@@ -298,34 +321,41 @@
       const changes = Object.fromEntries(Object.entries(draft).filter(([field, value]) => value !== String(step?.settings?.[field] || "")));
       const data = await api(`${endpoint(flow)}/steps/${encodeURIComponent(stepId)}`, changes);
       flowState.drafts.delete(key);
+      savePromptDrafts();
       const card = [...$("flowSteps").children].find(node => node.dataset.stepId === stepId);
       if (card) { card.dataset.signature = ""; if (card.contains(document.activeElement)) document.activeElement.blur(); }
       return data;
     }, "修改已保存，后续步骤将使用新的内容。");
   }
 
-  async function createFlow(event) {
-    event.preventDefault();
-    if (flowState.uploads || flowState.busy) { notice("请等待素材上传完成。", true); return; }
+  function createDefaults() {
     const mode = $("flowMode").value;
     const timed = mode !== "spatial";
     const cutSeconds = Number($("flowCutSeconds").value);
-    if (timed && (!Number.isFinite(cutSeconds) || cutSeconds <= 0)) { notice("请填写大于 0 的切点秒数。", true); return; }
-    const payload = {
+    return {
       name: $("flowName").value.trim(), mode, temporalMode: $("flowTemporalMode").value,
       spatialTarget: $("flowSpatialTarget").value, videoPath: $("flowVideoPath").value.trim(),
       referenceImagePath: ["spatial", "mixed"].includes(mode) ? $("flowReferencePath").value.trim() : "",
       startImagePath: timed && temporalMode() === "prefix" ? $("flowStartPath").value.trim() : "",
       endImagePath: timed && temporalMode() === "suffix" ? $("flowEndPath").value.trim() : "",
-      cutSeconds: timed ? cutSeconds : null, editInstruction: $("flowInstruction").value.trim(),
+      cutSeconds: timed && $("flowCutSeconds").value.trim() ? cutSeconds : null, editInstruction: $("flowInstruction").value.trim(),
       keepAudio: $("flowKeepAudio").checked, promptSource: $("flowPromptSource").value,
     };
+  }
+  async function createFlow(event) {
+    event.preventDefault();
+    if (batchInput()) return;
+    if (flowState.uploads || flowState.busy) { notice("请等待素材上传完成。", true); return; }
+    const payload = createDefaults();
+    if (payload.mode !== "spatial" && (!Number.isFinite(payload.cutSeconds) || payload.cutSeconds <= 0)) { notice("请填写大于 0 的切点秒数。", true); return; }
     $("flowCreateBtn").disabled = true;
     notice();
     try {
       const data = await api("/api/video-flows", payload);
       flowState.list.unshift(data.flow);
       store("video-flows:selected", data.flow.id);
+      store("video-workspace:selection", "single");
+      document.dispatchEvent(new CustomEvent("video-flows:show", {detail: {panel: "single"}}));
       renderFlow(data.flow, true);
       notice("流程已保存。可以先检查步骤，再执行下一步。");
       startPolling();
@@ -362,7 +392,7 @@
   }
 
   $("flowCreateForm").addEventListener("submit", createFlow);
-  ["flowMode", "flowTemporalMode", "flowSpatialTarget", "flowPromptSource"].forEach(id => $(id).addEventListener("change", updateCreateFields));
+  ["flowInputMode", "flowMode", "flowTemporalMode", "flowSpatialTarget", "flowPromptSource"].forEach(id => $(id).addEventListener("change", updateCreateFields));
   $("flowStartPath").addEventListener("input", updateCreateFields);
   document.querySelectorAll("[data-flow-upload]").forEach(input => input.addEventListener("change", () => upload(input)));
   ["flowVideoPath", "flowReferencePath", "flowStartPath", "flowEndPath"].forEach(id => $(id).addEventListener("input", () => {
@@ -372,7 +402,8 @@
     $(`${id}Preview`).replaceChildren();
     $(`${id}UploadStatus`).textContent = "";
   }));
-  $("flowNewBtn").addEventListener("click", showCreate);
+  $("flowNewBtn").addEventListener("click", () => { showCreate(); $("flowInputMode").value = "single"; updateCreateFields(); });
+  $("flowBackBatchBtn").addEventListener("click", () => flowState.flow?.batchId && document.dispatchEvent(new CustomEvent("video-batches:open", {detail: {id: flowState.flow.batchId}})));
   $("videoFlowsView").addEventListener("click", event => {
     const button = event.target.closest("[data-flow-prompt-config]");
     const module = button && promptModules[button.dataset.flowPromptConfig];
@@ -401,6 +432,7 @@
     const key = draftKey(flowState.flow.id, step.id);
     const dirty = Object.keys(values).some(field => values[field] !== String(step.settings?.[field] || ""));
     if (dirty) flowState.drafts.set(key, values); else flowState.drafts.delete(key);
+    savePromptDrafts();
     card.querySelector("[data-dirty-label]").textContent = dirty ? " · 尚未保存" : "";
     updateControls();
   });
@@ -409,16 +441,24 @@
     if (event.detail.view !== "videoFlows") { stopPolling(); return; }
     try {
       await loadHistory();
-      if (flowState.flow) { await refreshFlow(); startPolling(); }
+      if (flowState.flow && flowState.panel === "single") { await refreshFlow(); startPolling(); }
       else if (!flowState.initialized) {
         flowState.initialized = true;
         const selected = stored("video-flows:selected");
-        if (selected && flowState.list.some(flow => flow.id === selected)) await openFlow(selected);
+        if (selected && ["", "single"].includes(stored("video-workspace:selection"))) await openFlow(selected);
       }
     } catch (error) { notice(`无法加载已保存流程：${error.message}`, true); }
   });
   window.addEventListener("beforeunload", event => {
     if (flowState.drafts.size) { event.preventDefault(); event.returnValue = ""; }
   });
+  document.addEventListener("video-batches:show", () => {
+    ++flowState.request;
+    flowState.panel = "batch";
+    stopPolling();
+    $("flowCreatePanel").hidden = true;
+    $("flowDetail").hidden = true;
+  });
+  window.VideoFlowUI = {getDefaults: createDefaults, uploadsPending: () => flowState.uploads, openFlow, showCreate, updateCreateFields};
   updateCreateFields();
 })();

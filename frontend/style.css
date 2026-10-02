@@ -93,6 +93,30 @@
 .flow-result { border-color: #a7f3d0; }
 .flow-result .flow-media-card video { height: auto; max-height: 520px; }
 .flow-empty { padding: 1rem .25rem; }
+.batch-import-panel, #batchDetail { display: grid; gap: 1rem; min-width: 0; }
+.batch-import-panel { padding: 1rem; border: 1px solid #bfdbfe; border-radius: 14px; background: #f8fbff; }
+#videoFlowsView .batch-csv-text { min-height: 150px; font-family: ui-monospace, Consolas, monospace; font-size: .82rem; white-space: pre; }
+.batch-table-wrap { max-height: 540px; overflow: auto; border: 1px solid var(--stroke); border-radius: 12px; }
+.batch-table { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 640px; font-size: .84rem; text-align: left; }
+.batch-table caption { caption-side: top; padding: .7rem; text-align: left; font-size: .8rem; color: var(--muted); background: white; }
+.batch-table th, .batch-table td { padding: .7rem; vertical-align: top; border-bottom: 1px solid var(--stroke); overflow-wrap: anywhere; min-width: 75px; max-width: 280px; white-space: pre-wrap; }
+.batch-table thead th { position: sticky; top: 0; z-index: 1; background: #eef2f7; font-weight: 600; }
+.batch-table tbody th { font-weight: 500; }
+.batch-table tr:last-child td, .batch-table tr:last-child th { border-bottom: 0; }
+.batch-table small { display: block; margin-top: .2rem; color: var(--muted); font-weight: 400; }
+.batch-row-error { background: #fff1f2; }
+.batch-error-cell { color: #9f1239; }
+.batch-row-actions { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; min-width: 140px; }
+.batch-row-actions .btn { font-size: .8rem; padding: .45rem .6rem; }
+.batch-row-actions a { color: var(--accent); white-space: nowrap; }
+.batch-counts { display: flex; gap: .7rem 1.2rem; flex-wrap: wrap; margin-top: .8rem; color: var(--muted); font-size: .9rem; }
+.batch-counts strong { color: var(--text); font-size: 1.1rem; margin-left: .3rem; }
+.batch-history { max-height: 27vh; }
+#flowHistory { max-height: 27vh; }
+.flow-status[data-status="partial"], .flow-status[data-status="interrupted"] { background: #fff7ed; color: #9a3412; }
+.flow-status[data-status="stopped"] { background: #f1f5f9; color: #475569; }
+#batchManifestLink { text-decoration: none; }
+#batchLogs { margin-top: .7rem; }
 #flowLogs { margin-top: .7rem; }
 #videoFlowsView input:disabled, #videoFlowsView textarea:disabled { opacity: .65; }
 @media (max-width: 1050px) {

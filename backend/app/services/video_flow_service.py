@@ -39,6 +39,7 @@ FLOW_KIND = "video_flow"
 FLOW_ROOT = project_root() / "output" / "video_flows"
 _LOCK = threading.RLock()
 _ACTIVE: set[str] = set()
+_BATCH_CLAIMS: dict[str, str] = {}
 _ID = re.compile(r"^[a-f0-9]{16}$")
 MODES = {"spatial": "局部空间替换", "prefix": "替换前段", "suffix": "替换后段", "mixed": "混合替换"}
 TEMPLATES = {
@@ -48,6 +49,12 @@ TEMPLATES = {
 }
 _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 _VIDEO_SUFFIXES = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v"}
+
+
+class ComfyOutcomeUnknown(RuntimeError):
+    """A submitted job may still be running and needs operator review."""
+
+
 _PROMPT_MODULES = {
     IMAGE_PROMPT_KIND: ("图生视频 Prompt", prompt_generator),
     IMAGE_EDIT_PROMPT_KIND: ("图生图 Prompt", image_edit_prompt_generator),
@@ -78,7 +85,9 @@ def _load(flow_id: str) -> dict[str, Any]:
     # A process restart cannot resume an in-memory Comfy/FFmpeg worker safely.
     if flow["status"] == "running" and flow_id not in _ACTIVE:
         flow["status"] = "failed"
-        flow["error"] = "服务曾重启，当前步骤未确认完成；请检查服务器队列后重试此步骤。"
+        flow["requiresReview"] = any(step["status"] == "running" and step["kind"] == "comfy" for step in flow["steps"])
+        flow["error"] = ("服务曾重启，当前步骤未确认完成；请检查服务器队列后重试此步骤。"
+                         if flow["requiresReview"] else "服务曾重启，当前步骤未完成；可从此步骤继续重试。")
         for step in flow["steps"]:
             if step["status"] == "running":
                 step.update(status="failed", error=flow["error"])
@@ -98,6 +107,8 @@ def _artifact(key: str, path: str | Path, flow_id: str) -> dict[str, str]:
 
 def _public(flow: dict[str, Any]) -> dict[str, Any]:
     result = copy.deepcopy(flow)
+    result["batchId"] = str(flow.get("batchId") or "")
+    result["batchLocked"] = flow["id"] in _BATCH_CLAIMS
     result["outputs"] = [item for step in result["steps"] for item in step["outputs"]]
     result["completedSteps"] = sum(step["status"] == "completed" for step in result["steps"])
     result["totalSteps"] = len(result["steps"])
@@ -119,7 +130,7 @@ def list_flows() -> list[dict[str, Any]]:
                 except (ValueError, OSError, KeyError):
                     continue
                 flows.append({key: flow[key] for key in (
-                    "id", "name", "mode", "status", "createdAt", "updatedAt", "completedSteps", "totalSteps",
+                    "id", "name", "mode", "status", "createdAt", "updatedAt", "completedSteps", "totalSteps", "batchId", "batchLocked",
                 )})
         return sorted(flows, key=lambda item: item["updatedAt"], reverse=True)
 
@@ -141,7 +152,8 @@ def _input_path(value: Any, label: str, suffixes: set[str], required: bool = Tru
     return str(path.resolve())
 
 
-def create_flow(payload: dict[str, Any]) -> dict[str, Any]:
+def build_flow(payload: dict[str, Any]) -> dict[str, Any]:
+    """Validate and construct a recipe without persisting or starting it."""
     if not isinstance(payload, dict):
         raise ValueError("流程配置必须是对象。")
     mode = str(payload.get("mode") or "spatial")
@@ -222,9 +234,38 @@ def create_flow(payload: dict[str, Any]) -> dict[str, Any]:
         add("assemble", "拼接并导出成片", "assemble", "按替换方向拼接、统一原片尺寸和帧率，并按设置恢复原音轨。")
     else:
         add("finish", "导出空间替换成片", "assemble", "使用纯生成输出，匹配原片尺寸、时长和帧率，并按设置恢复原音轨。")
+    return flow
+
+
+def create_flow(payload: dict[str, Any]) -> dict[str, Any]:
+    flow = build_flow(payload)
     with _LOCK:
         _save(flow)
     return _public(flow)
+
+
+def reserve_batch_flows(batch_id: str, flow_ids: list[str]) -> None:
+    """Atomically reserve every batch member before its first row can start."""
+    with _LOCK:
+        for flow_id in flow_ids:
+            flow = _load(flow_id)
+            if flow.get("batchId") != batch_id:
+                raise ValueError("流程不属于此批次。")
+            if flow_id in _ACTIVE or _BATCH_CLAIMS.get(flow_id) not in {None, batch_id}:
+                raise ValueError("批次中的流程正在单独执行，请结束后再启动批次。")
+        _BATCH_CLAIMS.update({flow_id: batch_id for flow_id in flow_ids})
+
+
+def release_batch_flows(batch_id: str) -> None:
+    with _LOCK:
+        for flow_id in [key for key, value in _BATCH_CLAIMS.items() if value == batch_id]:
+            _BATCH_CLAIMS.pop(flow_id, None)
+
+
+def _check_batch_access(flow_id: str, batch_id: str = "") -> None:
+    owner = _BATCH_CLAIMS.get(flow_id)
+    if owner and owner != batch_id:
+        raise ValueError("此流程已由运行中的批次接管，请先停止批次再编辑或单独执行。")
 
 
 def _step(flow: dict[str, Any], step_id: str) -> dict[str, Any]:
@@ -249,6 +290,7 @@ def _invalidate(flow: dict[str, Any], index: int) -> None:
 def update_step(flow_id: str, step_id: str, payload: dict[str, Any]) -> dict[str, Any]:
     with _LOCK:
         flow = _load(flow_id)
+        _check_batch_access(flow_id)
         if flow_id in _ACTIVE:
             raise ValueError("流程正在执行，请等待当前步骤结束后再编辑。")
         step = _step(flow, step_id)
@@ -272,9 +314,10 @@ def update_step(flow_id: str, step_id: str, payload: dict[str, Any]) -> dict[str
         return _public(flow)
 
 
-def claim_run(flow_id: str, job_id: str, step_id: str = "") -> dict[str, Any]:
+def claim_run(flow_id: str, job_id: str, step_id: str = "", *, batch_id: str = "") -> dict[str, Any]:
     with _LOCK:
         flow = _load(flow_id)
+        _check_batch_access(flow_id, batch_id)
         if flow_id in _ACTIVE:
             raise ValueError("此流程已经在执行中。")
         step = _step(flow, step_id) if step_id else next((s for s in flow["steps"] if s["status"] != "completed"), None)
@@ -284,7 +327,7 @@ def claim_run(flow_id: str, job_id: str, step_id: str = "") -> dict[str, Any]:
             raise ValueError("请先完成此步骤之前的步骤。")
         # Failed or completed reruns invalidate every dependent result.
         _invalidate(flow, flow["steps"].index(step))
-        flow.update(status="running", jobId=job_id, error="", stopRequested=False, activeStep=step["id"])
+        flow.update(status="running", jobId=job_id, error="", stopRequested=False, activeStep=step["id"], requiresReview=False)
         _ACTIVE.add(flow_id)
         try:
             _save(flow)
@@ -294,9 +337,10 @@ def claim_run(flow_id: str, job_id: str, step_id: str = "") -> dict[str, Any]:
         return _public(flow)
 
 
-def request_stop(flow_id: str) -> dict[str, Any]:
+def request_stop(flow_id: str, *, batch_id: str = "") -> dict[str, Any]:
     with _LOCK:
         flow = _load(flow_id)
+        _check_batch_access(flow_id, batch_id)
         if flow_id in _ACTIVE:
             flow["stopRequested"] = True
             _save(flow)
@@ -484,6 +528,9 @@ def _run_comfy(flow: dict[str, Any], step: dict[str, Any], directory: Path, job_
         message = failures[0].get("message") if failures else result.get("status")
         if any(f.get("error_code") == "JOB_TIMEOUT" for f in failures):
             message = f"{message}；服务器任务可能仍在执行，请检查 Comfy 队列后再重试。"
+            raise ComfyOutcomeUnknown(f"Comfy 生成结果未确认：{message}")
+        if any(f.get("stage") == "SUBMIT" for f in failures):
+            raise ComfyOutcomeUnknown(f"Comfy 提交结果未确认：{message}；请检查服务器队列后再重试。")
         raise RuntimeError(f"Comfy 生成未完成：{message or '没有返回结果'}")
     source = Path(result["items"][0]["path"])
     wanted = _IMAGE_SUFFIXES if role == "first_image" else _VIDEO_SUFFIXES
@@ -575,12 +622,13 @@ def run_flow_steps(*, flow_id: str, job_id: str, run_all: bool,
             flow = _load(flow_id)
             if current_id:
                 _step(flow, current_id).update(status="failed", error=str(exc))
-            flow.update(status="failed", error=str(exc), activeStep="")
+            flow.update(status="failed", error=str(exc), activeStep="", requiresReview=isinstance(exc, ComfyOutcomeUnknown))
             _save(flow)
         log(f"步骤失败：{exc}")
         return {"status": "failed", "items": [o for s in flow["steps"] for o in s["outputs"]],
                 "failures": [{"step_id": current_id, "message": str(exc)}], "error": str(exc),
-                "output_dir": str(_directory(flow_id)), "total": len(flow["steps"])}
+                "output_dir": str(_directory(flow_id)), "total": len(flow["steps"]),
+                "requiresReview": bool(flow.get("requiresReview"))}
     finally:
         with _LOCK:
             _ACTIVE.discard(flow_id)

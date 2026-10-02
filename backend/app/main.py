@@ -78,6 +78,7 @@ from web_demo.backend.app.services.video_clip_service import (  # noqa: E402
 )
 from web_demo.backend.app.services.video_prompt_generator import run_video_generation  # noqa: E402
 from web_demo.backend.app.services import video_flow_service as video_flows  # noqa: E402
+from web_demo.backend.app.services import video_batch_service as video_batches  # noqa: E402
 from web_demo.backend.app.utils.file_writer import ensure_dir  # noqa: E402
 from web_demo.backend.app.utils.logging_utils import (  # noqa: E402
     get_job_log_path,
@@ -343,7 +344,7 @@ class JobStore:
 
     def has_active_jobs(self) -> bool:
         # 只有没有活动任务时，浏览器会话断开才允许自动关闭服务。
-        terminal_statuses = {"completed", "partial", "failed", "cancelled", "timeout"}
+        terminal_statuses = {"completed", "partial", "failed", "cancelled", "timeout", "stopped", "interrupted"}
         with self._lock:
             return any(job.status not in terminal_statuses for job in self._jobs.values())
 
@@ -530,7 +531,7 @@ def _start_job_worker(
             STORE.update(
                 job.id,
                 status=status,
-                progress=final_total,
+                progress=max(0, min(final_total, int(result.get("progress", final_total)))),
                 total=final_total,
                 output_dir=result["output_dir"],
                 error=str(result.get("error") or _first_failure_message(result["failures"]) or ""),
@@ -739,6 +740,36 @@ def start_video_flow_job(flow_id: str, payload: dict[str, Any]) -> JobState:
     return _start_job_worker(job=job, total=len(flow["steps"]), runner=runner)
 
 
+def start_video_batch_job(batch_id: str, payload: dict[str, Any]) -> JobState:
+    retry_failed = payload.get("retryFailed", False)
+    if not isinstance(retry_failed, bool):
+        raise ValueError("retryFailed 必须为布尔值。")
+    batch = video_batches.get_batch(batch_id)
+    job = STORE.create(kind=video_batches.BATCH_KIND, total=batch["total"])
+    try:
+        video_batches.claim_batch(batch_id, job.id, retry_failed=retry_failed)
+    except Exception as exc:
+        STORE.update(job.id, status="failed", error=str(exc), finished_at=time.time())
+        raise
+    STORE.merge_meta(job.id, batch_id=batch_id)
+
+    def update_job(**changes: Any) -> None:
+        # Nested Comfy jobs must not replace batch-wide counters or status.
+        meta = changes.get("meta")
+        if isinstance(meta, dict):
+            STORE.merge_meta(job.id, **meta)
+
+    def runner(job_state: JobState) -> dict[str, Any]:
+        return video_batches.run_batch(
+            batch_id=batch_id, job_id=job_state.id,
+            log=lambda message: STORE.append_log(job_state.id, message),
+            progress=lambda current, total: STORE.update(job_state.id, progress=current, total=total),
+            update_job=update_job,
+        )
+
+    return _start_job_worker(job=job, total=batch["total"], runner=runner)
+
+
 def _job_output_files(job: JobState) -> list[dict[str, str]]:
     # 优先返回已经收集到的 Comfy 输出文件；否则退回输出目录扫描。
     files: list[dict[str, str]] = []
@@ -824,8 +855,25 @@ class DemoHandler(BaseHTTPRequestHandler):
             return self._serve_frontend("app.js", "application/javascript; charset=utf-8")
         if path == "/video-flows.js":
             return self._serve_frontend("video-flows.js", "application/javascript; charset=utf-8")
+        if path == "/video-batches.js":
+            return self._serve_frontend("video-batches.js", "application/javascript; charset=utf-8")
         if path == "/style.css":
             return self._serve_frontend("style.css", "text/css; charset=utf-8")
+
+        if path == "/api/video-batches" or path.startswith("/api/video-batches/"):
+            try:
+                parts = path.strip("/").split("/")
+                if len(parts) == 2:
+                    return json_response(self, HTTPStatus.OK, {"batches": video_batches.list_batches()})
+                if len(parts) == 3:
+                    return json_response(self, HTTPStatus.OK, {"batch": video_batches.get_batch(parts[2])})
+                if len(parts) == 4 and parts[3] == "manifest.csv":
+                    return self._serve_flow_file(video_batches.resolve_manifest(parts[2]))
+                return json_response(self, HTTPStatus.NOT_FOUND, {"error": "批量流程接口不存在。"})
+            except FileNotFoundError as exc:
+                return json_response(self, HTTPStatus.NOT_FOUND, {"error": str(exc)})
+            except (ValueError, TypeError, RuntimeError, OSError) as exc:
+                return json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
 
         if path == "/api/video-flows" or path.startswith("/api/video-flows/"):
             try:
@@ -966,6 +1014,25 @@ class DemoHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
+
+        if path == "/api/video-batches" or path.startswith("/api/video-batches/"):
+            try:
+                parts = path.strip("/").split("/")
+                payload = read_body_json(self)
+                if not isinstance(payload, dict):
+                    raise ValueError("请求必须是 JSON 对象。")
+                if len(parts) == 2:
+                    return json_response(self, HTTPStatus.CREATED, {"batch": video_batches.create_batch(payload)})
+                if len(parts) == 4 and parts[3] == "run":
+                    job = start_video_batch_job(parts[2], payload)
+                    return json_response(self, HTTPStatus.ACCEPTED, {"jobId": job.id, "batch": video_batches.get_batch(parts[2])})
+                if len(parts) == 4 and parts[3] == "stop":
+                    return json_response(self, HTTPStatus.OK, {"batch": video_batches.request_stop(parts[2])})
+                return json_response(self, HTTPStatus.NOT_FOUND, {"error": "批量流程接口不存在。"})
+            except FileNotFoundError as exc:
+                return json_response(self, HTTPStatus.NOT_FOUND, {"error": str(exc)})
+            except (ValueError, TypeError, RuntimeError, OSError) as exc:
+                return json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
 
         if path == "/api/video-flows" or path.startswith("/api/video-flows/"):
             try:
