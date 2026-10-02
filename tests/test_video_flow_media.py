@@ -94,6 +94,8 @@ class VideoFlowMediaTests(unittest.TestCase):
         graph = self.option_values(self.commands[0], "-filter_complex")[0]
         self.assertIn("[retained][generated]concat=", graph)
         self.assertIn("[1:v:0]setpts=(PTS-STARTPTS)*1.2,", graph)
+        self.assertIn("scale=1280:720:force_original_aspect_ratio=decrease", graph)
+        self.assertIn("pad=1280:720", graph)
         self.assertEqual(result["replacement_duration"], 6)
         self.assertEqual(result["duration"], 10)
 
@@ -121,6 +123,20 @@ class VideoFlowMediaTests(unittest.TestCase):
         self.assertIn("fps=30", graph)
         self.assertEqual(self.option_values(arguments, "-map"), ["[video]", "1:a?"])
         self.assertEqual(result["duration"], 10)
+
+    def test_spatial_square_output_reverses_v5_resize_for_landscape_and_portrait_sources(self):
+        self.generated_meta = metadata(5, fps=16, width=832, height=832)
+        for width, height in ((1920, 1080), (1080, 1920)):
+            with self.subTest(source_geometry=(width, height)):
+                self.source_meta = metadata(10, width=width, height=height)
+                output = self.root / f"spatial_{width}_{height}.mp4"
+                media.finalize_spatial(self.generated, self.source, output)
+                graph = self.option_values(self.commands[-1], "-filter_complex")[0]
+                self.assertIn(f"scale={width}:{height},setsar=1,", graph)
+                self.assertNotIn("force_original_aspect_ratio", graph)
+                self.assertNotIn(",pad=", graph)
+                self.assertIn("setpts=(PTS-STARTPTS)*2,", graph)
+                self.assertIn("fps=30", graph)
 
     def test_invalid_cut_fails_before_creating_outputs_or_invoking_ffmpeg(self):
         for direction in ("prefix", "suffix"):

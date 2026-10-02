@@ -195,13 +195,19 @@ def prepare_temporal(
 
 def _normalized_filter(
     input_meta: dict[str, Any], source_meta: dict[str, Any], duration: float, *, stretch: bool,
+    stretch_geometry: bool = False,
 ) -> str:
     factor = duration / float(input_meta["duration"]) if stretch else 1.0
     width, height = int(source_meta["width"]), int(source_meta["height"])
-    return (
-        f"setpts=(PTS-STARTPTS)*{_number(factor)},"
+    geometry = (
+        f"scale={width}:{height},setsar=1,"
+        if stretch_geometry else
         f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
         f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,"
+    )
+    return (
+        f"setpts=(PTS-STARTPTS)*{_number(factor)},"
+        f"{geometry}"
         f"fps={_number(source_meta['fps'])},"
         f"tpad=stop_mode=clone:stop_duration={_number(duration)},"
         f"trim=duration={_number(duration)},setpts=PTS-STARTPTS"
@@ -288,9 +294,13 @@ def finalize_spatial(
     """Restore source geometry, frame rate, duration and optional original audio."""
     generated, source = (_source_file(path) for path in (generated, source))
     source_meta, generated_meta = probe_video(source), probe_video(generated)
+    # The fixed V5 graph resizes source frames directly to a square. Undo that
+    # nonuniform resize here; fitting the square would preserve distortion and
+    # add black bars. Temporal replacement still uses aspect-preserving fitting.
     graph = (
         "[0:v:0]"
-        + _normalized_filter(generated_meta, source_meta, float(source_meta["duration"]), stretch=True)
+        + _normalized_filter(generated_meta, source_meta, float(source_meta["duration"]),
+                             stretch=True, stretch_geometry=True)
         + "[video]"
     )
     return _render_final([generated], source, output, source_meta, graph, keep_audio)

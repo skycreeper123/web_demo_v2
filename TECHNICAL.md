@@ -667,7 +667,7 @@ CSV 行优先字段：
 
 Comfy 新增 `start_image_ref / end_image_ref`，分别来自表单或 CSV 的 `start_image_path / end_image_path`；文件投递为各自的 `start.ext / end.ext`。Qwen 正负提示词按 conditioning 上游关系推断，避免把正向文字填入负向分支。
 
-V5 的前后景选择映射为 RMBG `invert_output`，新流程关闭 77 帧加载上限。I2V 使用 16fps，帧数向上选择 `4n+1`；成片阶段将生成段时长匹配待替换区间。混合任务先将空间结果匹配原片时间轴，再进行裁切。新媒体路径统一原片帧率和尺寸（等比缩放补边），可映射原片音轨；不改动旧剪辑工作台预设。
+V5 的前后景选择映射为 RMBG `invert_output`，新流程关闭 77 帧加载上限。I2V 使用 16fps，帧数向上选择 `4n+1`；成片阶段将生成段时长匹配待替换区间。固定 V5 模板先将源画面非等比缩放成方形，因此空间结果通过直接缩放到原片宽高反向还原；时间替换的生成片段仍使用等比缩放补边。混合任务先将空间结果匹配原片时间轴，再进行裁切。新媒体路径统一原片帧率和尺寸，可映射原片音轨；不改动旧剪辑工作台预设。
 
 每次执行自动 Prompt 生成时，按步骤 `settings.apiKind` 读取对应模块已保存的 API 配置以及 Prompt 配置中的 `system_prompt / user_text`。`video` 用于空间替换、`image_edit` 用于新首图、`image` 用于首尾帧过渡。以模块的 System Prompt 和 User Prompt 为基础，在 User Prompt 末尾追加本步任务范围、实际媒体顺序和时长；双图提示词同时输入首尾两张图。明确禁止 Mock 回退。手动保存正向提示词后可绕过该步的 LLM 调用。
 
