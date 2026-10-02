@@ -6,6 +6,11 @@
   const modes = {spatial: "局部空间替换", prefix: "替换前段", suffix: "替换后段", mixed: "混合替换"};
   const statuses = {draft: "待执行", pending: "待执行", ready: "可继续", running: "运行中", completed: "已完成", failed: "失败", stopped: "已停止"};
   const kinds = {prompt: "提示词", comfy: "生成", media: "素材准备", assemble: "合成"};
+  const promptModules = {
+    image: {view: "image", label: "图片 → I2V Prompt"},
+    image_edit: {view: "imageEdit", label: "图片 → 图生图 Prompt"},
+    video: {view: "video", label: "视频 → 视频编辑 Prompt"},
+  };
   const flowState = {list: [], flow: null, timer: null, busy: false, uploads: 0, request: 0, drafts: new Map(), previews: new Map(), initialized: false};
   const store = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
   const stored = key => { try { return localStorage.getItem(key) || ""; } catch { return ""; } };
@@ -58,7 +63,7 @@
     $("flowRecipe").innerHTML = sequence.map((label, index) => `<span><b>${index + 1}</b>${html(label)}</span>`).join('<i aria-hidden="true">→</i>');
     $("flowPromptSourceHint").textContent = $("flowPromptSource").value === "manual"
       ? "创建后检查并修改各步提示词，保存后再执行。"
-      : "复用现有 API 配置；使用真实模型生成提示词，不使用模拟结果。";
+      : "每次自动生成读取对应模块已保存的 API、System Prompt 与 User Prompt，并在 User Prompt 末尾补充任务范围、素材顺序和时长。不使用模拟结果。";
   }
 
   function dateLabel(value) {
@@ -116,9 +121,11 @@
   function stepMarkup(step, index, flow) {
     const draft = flowState.drafts.get(draftKey(flow.id, step.id));
     const settings = draft || step.settings || {};
+    const promptModule = step.kind === "prompt" ? promptModules[step.settings?.apiKind] : null;
     const editable = step.kind === "prompt" || ["prompt", "negativePrompt", "instruction"].some(key => Object.prototype.hasOwnProperty.call(step.settings || {}, key));
     const outputs = Array.isArray(step.outputs) ? step.outputs : [];
     return `<div class="flow-step-heading"><span class="flow-step-number">${index + 1}</span><div><div class="flow-step-title"><h3>${html(step.title || step.id)}</h3><span class="flow-status" data-step-status data-status="${html(step.status)}">${html(statuses[step.status] || step.status)}</span></div><p class="panel-note">${html(step.description || kinds[step.kind] || "")}</p></div></div>
+      ${step.kind === "prompt" ? `<div class="flow-step-actions"><span class="chip chip-soft">配置来源：${html(promptModule?.label || "未识别 Prompt 模块")}</span><button type="button" class="btn btn-ghost" data-flow-prompt-config="${html(step.settings?.apiKind || "")}" ${promptModule ? "" : "disabled"}>配置此 Prompt 模块</button></div><p class="panel-note">自动生成时读取此模块已保存的 API、System Prompt 和 User Prompt。修改全局配置不会更新已生成文字；请重跑本提示词步骤及后续步骤。</p>` : ""}
       ${step.error ? `<p class="flow-error" role="alert">${html(step.error)}</p>` : ""}
       ${editable ? `<details class="flow-step-editor" ${step.kind === "prompt" || draft ? "open" : ""}><summary>查看 / 编辑提示词与指令<span data-dirty-label>${draft ? " · 尚未保存" : ""}</span></summary><div class="flow-step-fields">
         <label class="prompt-field"><span>本步编辑指令</span><textarea class="textarea flow-small-textarea" rows="2" data-step-field="instruction">${html(settings.instruction || "")}</textarea></label>
@@ -366,7 +373,11 @@
     $(`${id}UploadStatus`).textContent = "";
   }));
   $("flowNewBtn").addEventListener("click", showCreate);
-  $("flowPromptConfigBtn").addEventListener("click", () => setView("promptStudio", "video"));
+  $("videoFlowsView").addEventListener("click", event => {
+    const button = event.target.closest("[data-flow-prompt-config]");
+    const module = button && promptModules[button.dataset.flowPromptConfig];
+    if (module) setView("promptStudio", module.view);
+  });
   $("flowRefreshListBtn").addEventListener("click", () => loadHistory().catch(error => notice(error.message, true)));
   $("flowRefreshBtn").addEventListener("click", () => refreshFlow().catch(error => notice(error.message, true)));
   $("flowNextBtn").addEventListener("click", () => runStep(null, false));

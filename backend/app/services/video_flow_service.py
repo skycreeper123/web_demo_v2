@@ -20,8 +20,15 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable
 
-from web_demo.backend.app.core.config import load_api_config, load_comfy_config, project_root
+from web_demo.backend.app.core.config import (
+    IMAGE_EDIT_PROMPT_KIND, IMAGE_PROMPT_KIND, VIDEO_PROMPT_KIND,
+    load_api_config, load_comfy_config, load_prompt_config, project_root,
+    project_relative_path_text, prompt_config_path,
+)
 from web_demo.backend.app.core.llm_client import OpenAICompatibleClient
+from web_demo.backend.app.services import (
+    image_edit_prompt_generator, prompt_generator, video_prompt_generator,
+)
 from web_demo.backend.app.services.comfyui_comm import run_comfy_job
 from web_demo.backend.app.services.comfyui_comm.workflow_binder import resolve_template_payload
 from web_demo.backend.app.services.video_flow_media import (
@@ -41,6 +48,11 @@ TEMPLATES = {
 }
 _IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 _VIDEO_SUFFIXES = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v"}
+_PROMPT_MODULES = {
+    IMAGE_PROMPT_KIND: ("图生视频 Prompt", prompt_generator),
+    IMAGE_EDIT_PROMPT_KIND: ("图生图 Prompt", image_edit_prompt_generator),
+    VIDEO_PROMPT_KIND: ("视频编辑 Prompt", video_prompt_generator),
+}
 
 
 def _directory(flow_id: str) -> Path:
@@ -315,23 +327,71 @@ def _media_url(path: Path) -> str:
     return f"data:{mime};base64," + base64.b64encode(path.read_bytes()).decode("ascii")
 
 
-def _parse_prompt(text: str) -> tuple[str, str]:
+def _parse_prompt(text: str, kind: str = IMAGE_PROMPT_KIND) -> tuple[str, str]:
+    # Use the same parsing and normalization as the selected standalone module,
+    # including its avoid-list handling and module-specific negative terms.
+    if kind not in _PROMPT_MODULES:
+        raise ValueError("此步骤没有对应的 Prompt 模块。")
+    module = _PROMPT_MODULES[kind][1]
     clean = text.strip()
-    if clean.startswith("```"):
-        clean = re.sub(r"^```(?:json)?\s*|\s*```$", "", clean).strip()
-    try:
-        value = json.loads(clean)
-    except ValueError:
-        if not clean:
-            raise ValueError("提示词接口没有返回文字。")
-        return clean, ""
-    if not isinstance(value, dict):
-        raise ValueError("提示词接口返回格式错误。")
-    positive = str(value.get("positive_prompt") or value.get("en_prompt") or value.get("zh_prompt") or "").strip()
-    negative = str(value.get("negative_prompt") or "").strip()
+    if not clean:
+        raise ValueError("提示词接口没有返回文字。")
+    value = module._try_parse_json(clean)
+    if value is None:
+        value = {"zh_prompt": clean}
+    positive = module._derive_positive_prompt(value)
+    negative = module._derive_negative_prompt(value)
     if not positive:
-        raise ValueError("提示词接口未返回有效的 positive_prompt。")
+        raise ValueError("提示词接口未返回有效的 positive_prompt、en_prompt 或 zh_prompt。")
     return positive, negative
+
+
+def _build_prompt_request(flow: dict[str, Any], step: dict[str, Any], media_paths: list[Path]) -> dict[str, Any]:
+    settings = step["settings"]
+    kind = settings["apiKind"]
+    if kind not in _PROMPT_MODULES:
+        raise ValueError("此步骤没有对应的 Prompt 模块。")
+    # Read on every real generation, so changes saved in the existing Prompt
+    # workbench also apply to previously created recipes when they are rerun.
+    config = load_prompt_config(kind)
+    system = str(config.get("system_prompt") or "")
+    base_user = str(config.get("user_text") or "")
+    context = [
+        "当前流程任务补充：以下内容将模块模板具体化到本次素材。保留模板的输出格式与通用质量要求；"
+        "若模板中的默认编辑对象、单图假设或无用户指令假设与本次任务不同，以本次任务的具体范围和素材角色为准。",
+        f"步骤：{step['title']}",
+        str(settings.get("instruction") or ""),
+    ]
+    if step["id"] == "spatial_prompt":
+        background = flow["inputs"]["spatialTarget"] == "background"
+        context.append(
+            "本次替换背景：参考图提供目标背景；保留原视频前景主体的身份、外观与动作。"
+            "模板若默认人物替换或保留原背景，应将这部分任务假设调整为本次背景替换。"
+            if background else
+            "本次替换前景：参考图提供目标主体；保留原背景、镜头和动作节奏。"
+        )
+        roles = ["原视频", "替换参考图"]
+    elif step["id"] == "first_prompt":
+        context.append("本次图生图有明确编辑需求：第一张图片是要编辑的原首帧，第二张仅用于理解后续衔接；输出单张新首图的编辑提示词。")
+        roles = ["原首帧（编辑源图）", "保留后段的衔接首帧（连续性参考）"]
+    else:
+        context.append("本次图生视频使用首尾双图：第一张首图为起始状态，第二张尾图为结束状态；同时参考两张图设计连续过渡。"
+                       "首尾图已呈现的差异优先于模板默认的小幅运动或原图属性不变假设；只为完成两端之间的过渡描述必要变化。")
+        context.append(f"目标片段时长：{float(flow['media']['replacement_duration']):.3f} 秒。")
+        roles = ["首图（起始状态）", "尾图（结束状态）"]
+    media_info = []
+    for index, path in enumerate(media_paths):
+        role = roles[index] if index < len(roles) else f"参考素材 {index + 1}"
+        context.append(f"第 {index + 1} 项素材：{role}；文件名：{path.name}")
+        media_info.append({"role": role, "name": path.name,
+                           "kind": "video" if path.suffix.lower() in _VIDEO_SUFFIXES else "image"})
+    return {
+        "module_kind": kind, "module_label": _PROMPT_MODULES[kind][0],
+        "config_path": project_relative_path_text(prompt_config_path(kind)),
+        "system_prompt": system, "base_user_text": base_user,
+        "user_text": base_user + ("\n\n" if base_user else "") + "\n".join(context),
+        "media": media_info,
+    }
 
 
 def _run_prompt(flow: dict[str, Any], step: dict[str, Any], directory: Path, log: Callable[[str], None]) -> list[dict[str, str]]:
@@ -339,6 +399,7 @@ def _run_prompt(flow: dict[str, Any], step: dict[str, Any], directory: Path, log
     prompt = str(settings.get("prompt") or "").strip()
     negative = str(settings.get("negativePrompt") or "").strip()
     media_paths = [_path(flow, key) for key in settings["media"]]
+    request_outputs: list[dict[str, str]] = []
     if not (settings.get("promptEdited") and prompt):
         if flow["inputs"]["promptSource"] == "manual":
             if not prompt:
@@ -350,17 +411,17 @@ def _run_prompt(flow: dict[str, Any], step: dict[str, Any], directory: Path, log
             api_key = str(config.get("api_key") or "").strip()
             if not api_key:
                 raise ValueError("请先在对应 Prompt 模块保存 API 密钥，或手动填写并保存此步骤的提示词。")
+            request = _build_prompt_request(flow, step, media_paths)
             client = OpenAICompatibleClient(base_url=str(config.get("base_url") or ""), api_key=api_key,
                                             model=str(config.get("model") or ""))
             media = [{"kind": "video" if p.suffix.lower() in _VIDEO_SUFFIXES else "image", "url": _media_url(p)} for p in media_paths]
-            duration_text = f"\n目标片段时长：{flow['media']['replacement_duration']:.3f} 秒。" if step["id"] == "motion_prompt" else ""
-            system = ("你是视频编辑流程的提示词设计师。按本次步骤要求和输入素材生成可直接用于模型的提示词。"
-                      "不得把背景替换改成人物替换；双图任务必须同时理解两张图片。"
-                      "只返回 JSON 对象，包含 positive_prompt 和 negative_prompt 两个字符串，不要添加解释。")
-            log("使用已保存的 Prompt API 配置生成此步骤的提示词。")
-            response = client.chat_with_media(system, settings["instruction"] + duration_text, media)
-            prompt, generated_negative = _parse_prompt(response.text)
+            log(f"读取{request['module_label']}已保存的 System / User Prompt：{request['config_path']}")
+            request_file = directory / "prompt_request.json"
+            request_file.write_text(json.dumps(request, ensure_ascii=False, indent=2), encoding="utf-8")
+            response = client.chat_with_media(request["system_prompt"], request["user_text"], media)
+            prompt, generated_negative = _parse_prompt(response.text, settings["apiKind"])
             negative = generated_negative or negative
+            request_outputs.append(_artifact(step["id"] + "_request", request_file, flow["id"]))
     if not prompt:
         raise ValueError("提示词不能为空。")
     settings.update(prompt=prompt, negativePrompt=negative)
@@ -381,7 +442,7 @@ def _run_prompt(flow: dict[str, Any], step: dict[str, Any], directory: Path, log
         writer = csv.DictWriter(handle, fieldnames=list(row))
         writer.writeheader()
         writer.writerow(row)
-    return [_artifact(step["id"], prompt_file, flow["id"]), _artifact(step["id"] + "_csv", csv_file, flow["id"])]
+    return [_artifact(step["id"], prompt_file, flow["id"]), _artifact(step["id"] + "_csv", csv_file, flow["id"]), *request_outputs]
 
 
 def _run_comfy(flow: dict[str, Any], step: dict[str, Any], directory: Path, job_id: str,

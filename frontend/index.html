@@ -157,7 +157,7 @@
             <div class="flow-history-tools"><span class="panel-note">流程保存在服务器</span><button id="flowRefreshListBtn" class="btn btn-ghost" type="button">刷新</button></div>
             <div id="flowHistory" class="flow-history" aria-label="已保存的视频流程"><p class="panel-note">进入后加载流程。</p></div>
           </article>
-          <article class="card panel flow-help"><h2>使用方式</h2><p class="panel-note">先创建流程，再执行下一步。检查提示词和中间结果满意后，可连续执行剩余步骤。</p><p class="panel-note">自动提示词使用已保存的 Prompt API 配置，不使用模拟结果。</p><button id="flowPromptConfigBtn" class="btn btn-ghost" type="button">查看 Prompt 配置</button></article>
+          <article class="card panel flow-help"><h2>使用方式</h2><p class="panel-note">先创建流程，再执行下一步。检查提示词和中间结果满意后，可连续执行剩余步骤。</p><p class="panel-note">每次自动生成读取对应模块已保存的 API、System Prompt 与 User Prompt，并在 User Prompt 末尾补充本步范围、素材顺序和时长。不使用模拟结果。</p><p class="panel-note">空间替换用视频模块，新首图用图生图模块，首尾过渡用 I2V 模块。也可从每个提示词步骤直接进入对应配置。</p><div class="flow-run-actions"><button id="flowPromptConfigBtn" class="btn btn-ghost" type="button" data-flow-prompt-config="video">视频 Prompt 配置</button><button class="btn btn-ghost" type="button" data-flow-prompt-config="image_edit">图生图 Prompt 配置</button><button class="btn btn-ghost" type="button" data-flow-prompt-config="image">I2V Prompt 配置</button></div><p class="panel-note">全局配置修改后，已生成提示词保持不变；需重跑提示词步骤及后续步骤。</p></article>
         </aside>
         <div class="flow-main">
           <div id="flowNotice" class="flow-notice" role="status" aria-live="polite" hidden></div>
@@ -179,7 +179,7 @@
               </div>
               <div class="form-grid">
                 <label id="flowCutField" class="prompt-field" hidden><span>切点（从视频开始计算，秒）</span><input id="flowCutSeconds" class="input" type="number" min="0.001" step="any" placeholder="例如 3.5" /><small class="panel-note">前段替换切点之前，后段替换切点之后；切点须小于原视频时长。</small></label>
-                <label class="prompt-field"><span>提示词来源</span><select id="flowPromptSource" class="input"><option value="ai">自动生成 · 使用 Prompt API</option><option value="manual">手动填写 · 逐步编辑提示词</option></select><small id="flowPromptSourceHint" class="panel-note">复用现有 API 配置；缺少有效配置时会给出错误。</small></label>
+                <label class="prompt-field"><span>提示词来源</span><select id="flowPromptSource" class="input"><option value="ai">自动生成 · 读取对应模块配置</option><option value="manual">手动填写 · 逐步编辑提示词</option></select><small id="flowPromptSourceHint" class="panel-note">每次自动生成读取对应模块已保存的 API、System Prompt 与 User Prompt；缺少有效配置时会给出错误。</small></label>
               </div>
               <label class="prompt-field"><span>编辑需求</span><textarea id="flowInstruction" class="textarea flow-instruction" rows="3" placeholder="描述替换内容、新首图的画面和动作，或首尾画面之间的运动方向。"></textarea></label>
               <div class="flow-create-footer"><label class="toggle"><input id="flowKeepAudio" type="checkbox" checked /> 保留原视频声音</label><button id="flowCreateBtn" class="btn btn-primary" type="submit">创建流程</button></div>
