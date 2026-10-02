@@ -139,6 +139,12 @@ def _build_row_payload(
     form = payload.get("formInputs") or {}
     image_path = image_path or form.get("image_ref") or ""
     video_path = video_path or form.get("video_ref") or ""
+    start_image_path = row.get("start_image_path") or _resolve_csv_source_path(
+        payload.get("imageRootDir"), row.get("start_image_name"), path_style=path_style,
+    ) or form.get("start_image_ref") or ""
+    end_image_path = row.get("end_image_path") or _resolve_csv_source_path(
+        payload.get("imageRootDir"), row.get("end_image_name"), path_style=path_style,
+    ) or form.get("end_image_ref") or ""
     positive_prompt = row.get("positive_prompt") or form.get("positive_prompt")
     negative_prompt = row.get("negative_prompt") or form.get("negative_prompt")
     row_params = _parse_params_json(row.get("params_json"))
@@ -165,7 +171,10 @@ def _build_row_payload(
         "positivePrompt": positive_prompt,
         "negativePrompt": negative_prompt,
         "imagePath": image_path,
+        "startImagePath": start_image_path,
+        "endImagePath": end_image_path,
         "videoPath": video_path,
+        "outputNodeId": str(payload.get("outputNodeId") or "").strip(),
         "seed": seed,
         "outputPrefix": output_prefix,
         "params": merged_params,
@@ -320,11 +329,12 @@ def run_comfy_job(
             progress(current_index, total_rows)
             continue
 
-        if staged_inputs.get("image_ref"):
-            log(
-                f"[{current_index}/{total_rows}] Staged image: {staged_inputs.get('image_source')} -> "
-                f"{staged_inputs['image_ref']} ({_format_bytes(staged_inputs.get('image_bytes'))})"
-            )
+        for image_key in ("image", "start_image", "end_image"):
+            if staged_inputs.get(f"{image_key}_ref"):
+                log(
+                    f"[{current_index}/{total_rows}] Staged {image_key}: {staged_inputs.get(f'{image_key}_source')} -> "
+                    f"{staged_inputs[f'{image_key}_ref']} ({_format_bytes(staged_inputs.get(f'{image_key}_bytes'))})"
+                )
         if staged_inputs.get("video_ref"):
             log(
                 f"[{current_index}/{total_rows}] Staged video: {staged_inputs.get('video_source')} -> "
@@ -462,6 +472,7 @@ def run_comfy_job(
                             prompt_id=prompt_id,
                             output_prefix=str(row_payload.get("outputPrefix") or ""),
                             config=config,
+                            output_node_id=row_payload.get("outputNodeId") or None,
                         )
                         final_output_dir = result["output_dir"]
                         primary_path = result["output_path"]

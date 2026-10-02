@@ -91,8 +91,13 @@ def summarize_history_state(history_payload: dict[str, Any], prompt_id: str) -> 
     return {"state": "PENDING", "record": record}
 
 
-def _candidate_files_from_history(record: dict[str, Any], output_root: Path) -> list[Path]:
+def _candidate_files_from_history(record: dict[str, Any], output_root: Path, output_node_id: str | None = None) -> list[Path]:
     outputs = record.get("outputs") if isinstance(record.get("outputs"), dict) else {}
+    if output_node_id is not None:
+        node_output = outputs.get(output_node_id)
+        if not isinstance(node_output, dict):
+            raise RuntimeError(f"指定输出节点 {output_node_id} 没有返回结果。")
+        outputs = {output_node_id: node_output}
     candidates: list[Path] = []
     for node_output in outputs.values():
         if not isinstance(node_output, dict):
@@ -150,6 +155,7 @@ def collect_result(
     prompt_id: str,
     output_prefix: str,
     config: dict[str, Any],
+    output_node_id: str | None = None,
 ) -> dict[str, Any]:
     summary = summarize_history_state(history_payload, prompt_id)
     if summary["state"] != "SUCCEEDED":
@@ -157,7 +163,10 @@ def collect_result(
 
     output_root = resolve_comfy_output_dir(config)
     record = summary["record"]
-    candidates = _candidate_files_from_history(record, output_root)
+    selected_node = str(output_node_id).strip() if output_node_id is not None else ""
+    candidates = _candidate_files_from_history(record, output_root, selected_node or None)
+    if not candidates and selected_node:
+        raise RuntimeError(f"指定输出节点 {selected_node} 没有返回可用媒体文件。")
     if not candidates:
         candidates = _candidate_files_from_prefix(output_root, output_prefix)
     if not candidates:
@@ -165,7 +174,8 @@ def collect_result(
 
     existing = [path for path in candidates if path.exists() and path.is_file()]
     if not existing:
-        raise RuntimeError("结果文件不存在或不可读。")
+        label = f"指定输出节点 {selected_node} 的" if selected_node else ""
+        raise RuntimeError(f"{label}结果文件不存在或不可读。")
 
     # 先按“视频优先、较大的成片优先”排序，尽量避免把预览图或中间图当主输出。
     existing.sort(key=_candidate_sort_key)

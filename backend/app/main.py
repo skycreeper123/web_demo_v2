@@ -4,6 +4,7 @@ import json
 import logging
 import mimetypes
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -76,6 +77,7 @@ from web_demo.backend.app.services.video_clip_service import (  # noqa: E402
     run_video_clip_job,
 )
 from web_demo.backend.app.services.video_prompt_generator import run_video_generation  # noqa: E402
+from web_demo.backend.app.services import video_flow_service as video_flows  # noqa: E402
 from web_demo.backend.app.utils.file_writer import ensure_dir  # noqa: E402
 from web_demo.backend.app.utils.logging_utils import (  # noqa: E402
     get_job_log_path,
@@ -650,7 +652,7 @@ def start_video_job(payload: dict[str, Any]) -> JobState:
 
 
 def start_video_clip_job(payload: dict[str, Any]) -> JobState:
-    # 本地视频剪辑任务：裁切和合并都走这一条入口。
+    # 本地视频剪辑任务：裁切、合并和首尾帧提取都走这一条入口。
     job = STORE.create(kind="video_clip", total=0)
     get_job_logger(job.id, job.kind).info("Starting video clip job.")
 
@@ -707,6 +709,34 @@ def start_comfy_generation_job(payload: dict[str, Any]) -> JobState:
             }
 
     return _start_job_worker(job=job, total=100, runner=runner)
+
+
+def start_video_flow_job(flow_id: str, payload: dict[str, Any]) -> JobState:
+    flow = video_flows.get_flow(flow_id)
+    job = STORE.create(kind=video_flows.FLOW_KIND, total=len(flow["steps"]))
+    try:
+        video_flows.claim_run(flow_id, job.id, str(payload.get("stepId") or ""))
+    except Exception as exc:
+        STORE.update(job.id, status="failed", error=str(exc), finished_at=time.time())
+        raise
+    STORE.merge_meta(job.id, flow_id=flow_id)
+
+    def update_job(**changes: Any) -> None:
+        meta = changes.pop("meta", None)
+        if isinstance(meta, dict):
+            STORE.merge_meta(job.id, **meta)
+        if changes:
+            STORE.update(job.id, **changes)
+
+    def runner(job_state: JobState) -> dict[str, Any]:
+        return video_flows.run_flow_steps(
+            flow_id=flow_id, job_id=job_state.id, run_all=payload.get("runAll") is True,
+            log=lambda message: STORE.append_log(job_state.id, message),
+            progress=lambda current, total: STORE.update(job_state.id, progress=current, total=total),
+            update_job=update_job,
+        )
+
+    return _start_job_worker(job=job, total=len(flow["steps"]), runner=runner)
 
 
 def _job_output_files(job: JobState) -> list[dict[str, str]]:
@@ -792,8 +822,27 @@ class DemoHandler(BaseHTTPRequestHandler):
             return self._serve_frontend("index.html", "text/html; charset=utf-8")
         if path == "/app.js":
             return self._serve_frontend("app.js", "application/javascript; charset=utf-8")
+        if path == "/video-flows.js":
+            return self._serve_frontend("video-flows.js", "application/javascript; charset=utf-8")
         if path == "/style.css":
             return self._serve_frontend("style.css", "text/css; charset=utf-8")
+
+        if path == "/api/video-flows" or path.startswith("/api/video-flows/"):
+            try:
+                parts = path.strip("/").split("/")
+                if len(parts) == 2:
+                    return json_response(self, HTTPStatus.OK, {"flows": video_flows.list_flows()})
+                if parts[2] == "options" and len(parts) == 3:
+                    return json_response(self, HTTPStatus.OK, video_flows.flow_options())
+                if len(parts) == 3:
+                    return json_response(self, HTTPStatus.OK, {"flow": video_flows.get_flow(parts[2])})
+                if len(parts) == 5 and parts[3] == "files":
+                    return self._serve_flow_file(video_flows.resolve_flow_file(parts[2], unquote(parts[4])))
+                return json_response(self, HTTPStatus.NOT_FOUND, {"error": "流程接口不存在。"})
+            except FileNotFoundError as exc:
+                return json_response(self, HTTPStatus.NOT_FOUND, {"error": str(exc)})
+            except (ValueError, TypeError, OSError) as exc:
+                return json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
 
         # 全局配置接口。
         if path == "/api/config":
@@ -917,6 +966,27 @@ class DemoHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
+
+        if path == "/api/video-flows" or path.startswith("/api/video-flows/"):
+            try:
+                parts = path.strip("/").split("/")
+                payload = read_body_json(self)
+                if not isinstance(payload, dict):
+                    raise ValueError("请求必须是 JSON 对象。")
+                if len(parts) == 2:
+                    return json_response(self, HTTPStatus.CREATED, {"flow": video_flows.create_flow(payload)})
+                if len(parts) == 4 and parts[3] == "run":
+                    job = start_video_flow_job(parts[2], payload)
+                    return json_response(self, HTTPStatus.ACCEPTED, {"jobId": job.id, "flow": video_flows.get_flow(parts[2])})
+                if len(parts) == 4 and parts[3] == "stop":
+                    return json_response(self, HTTPStatus.OK, {"flow": video_flows.request_stop(parts[2])})
+                if len(parts) == 5 and parts[3] == "steps":
+                    return json_response(self, HTTPStatus.OK, {"flow": video_flows.update_step(parts[2], parts[4], payload)})
+                return json_response(self, HTTPStatus.NOT_FOUND, {"error": "流程接口不存在。"})
+            except FileNotFoundError as exc:
+                return json_response(self, HTTPStatus.NOT_FOUND, {"error": str(exc)})
+            except (ValueError, TypeError, RuntimeError, OSError) as exc:
+                return json_response(self, HTTPStatus.BAD_REQUEST, {"error": str(exc)})
 
         # 视频剪辑任务提交入口。
         if path == "/api/clip/run":
@@ -1243,6 +1313,52 @@ class DemoHandler(BaseHTTPRequestHandler):
             return json_response(self, HTTPStatus.OK, {"ok": True, "path": job.output_dir})
 
         return json_response(self, HTTPStatus.NOT_FOUND, {"error": "Not found"})
+
+    def _serve_flow_file(self, file_path: Path) -> None:
+        # Stream registered artifacts; Range support lets the browser seek in long videos.
+        size = file_path.stat().st_size
+        start, end = 0, size - 1
+        range_header = self.headers.get("Range", "")
+        if range_header:
+            match = re.fullmatch(r"bytes=(\d*)-(\d*)", range_header)
+            if not match or not any(match.groups()):
+                self.send_response(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            left, right = match.groups()
+            if left:
+                start = int(left)
+                end = min(int(right), size - 1) if right else size - 1
+            else:
+                start = max(0, size - int(right))
+            if start > end or start >= size:
+                self.send_response(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+        self.send_response(HTTPStatus.PARTIAL_CONTENT if range_header else HTTPStatus.OK)
+        self.send_header("Content-Type", mimetypes.guess_type(file_path.name)[0] or "application/octet-stream")
+        self.send_header("Content-Length", str(max(0, end - start + 1)))
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Cache-Control", "no-store")
+        if range_header:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.end_headers()
+        try:
+            with file_path.open("rb") as handle:
+                handle.seek(start)
+                remaining = end - start + 1
+                while remaining > 0:
+                    chunk = handle.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def _serve_frontend(self, filename: str, content_type: str) -> None:
         file_path = FRONTEND_DIR / filename

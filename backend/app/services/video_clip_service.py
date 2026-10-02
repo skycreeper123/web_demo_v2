@@ -167,6 +167,36 @@ CLIP_PRESETS: dict[str, ClipPreset] = {
         trimmed_dir_name="trimmed",
         preview_dir_name="first_frames",
     ),
+    "extract_first_last_frames": ClipPreset(
+        key="extract_first_last_frames",
+        label="同时提取首帧和尾帧",
+        group="首尾帧提取",
+        description="批量提取每个视频的首帧和尾帧，按原始分辨率保存为 PNG 图片。",
+        mode="extract_frames",
+        output_dir_name="output_frames",
+        trimmed_dir_name="",
+        preview_dir_name="",
+    ),
+    "extract_first_frame": ClipPreset(
+        key="extract_first_frame",
+        label="仅提取首帧",
+        group="首尾帧提取",
+        description="批量提取每个视频的第一帧，按原始分辨率保存为 PNG 图片。",
+        mode="extract_frames",
+        output_dir_name="output_frames",
+        trimmed_dir_name="",
+        preview_dir_name="",
+    ),
+    "extract_last_frame": ClipPreset(
+        key="extract_last_frame",
+        label="仅提取尾帧",
+        group="首尾帧提取",
+        description="顺序读取视频，提取实际可解码的最后一帧并保存为 PNG；长视频耗时较多。",
+        mode="extract_frames",
+        output_dir_name="output_frames",
+        trimmed_dir_name="",
+        preview_dir_name="",
+    ),
     "merge_pairwise": ClipPreset(
         key="merge_pairwise",
         label="双文件夹顺序合并",
@@ -400,6 +430,56 @@ def _write_last_frames(
         cap.release()
 
 
+def _extract_boundary_frames(
+    *,
+    video: Path,
+    output_dir: Path,
+    include_first: bool,
+    include_last: bool,
+) -> dict[str, Any]:
+    capture = _require_cv2().VideoCapture(str(video))
+    try:
+        if not capture.isOpened():
+            raise RuntimeError(f"无法打开视频：{video.name}")
+        ok, first_frame = capture.read()
+        if not ok:
+            raise RuntimeError(f"没有成功读取画面：{video.name}")
+
+        last_frame = first_frame
+        if include_last:
+            # Decode through EOF: frame-count metadata and seeks can miss the
+            # actual final frame, especially for variable-frame-rate videos.
+            while True:
+                ok, frame = capture.read()
+                if not ok:
+                    break
+                last_frame = frame
+    finally:
+        capture.release()
+
+    def save_frame(frame: Any, position: str) -> str:
+        folder = ensure_dir(output_dir / f"{position}_frames")
+        # Keep the source extension to distinguish e.g. sample.mp4/sample.mov.
+        path = folder / f"{video.name}_{position}_frame.png"
+        ok, encoded = cv2.imencode(".png", frame)
+        if not ok:
+            raise RuntimeError(f"无法编码图片：{path.name}")
+        # pathlib supports Unicode paths on Windows, unlike some cv2.imwrite builds.
+        path.write_bytes(encoded.tobytes())
+        return str(path)
+
+    first_image = save_frame(first_frame, "first") if include_first else ""
+    last_image = save_frame(last_frame, "last") if include_last else ""
+    detail = "提取首帧和尾帧" if include_first and include_last else "提取首帧" if include_first else "提取尾帧"
+    return {
+        "output_video": "",
+        "first_frame_image": first_image,
+        "last_frame_image": last_image,
+        "preview_image": first_image or last_image,
+        "detail": f"{detail}（PNG）",
+    }
+
+
 def _process_single_preset(
     *,
     preset: ClipPreset,
@@ -417,11 +497,19 @@ def _process_single_preset(
     items: list[dict[str, Any]] = []
     failures: list[dict[str, str]] = []
     total = len(videos)
+    progress(0, total)
 
     for index, video in enumerate(videos, start=1):
         log(f"处理视频：{video.name}")
         try:
-            if preset.mode == "ffmpeg_half":
+            if preset.mode == "extract_frames":
+                result = _extract_boundary_frames(
+                    video=video,
+                    output_dir=preset_dir,
+                    include_first=preset.key != "extract_last_frame",
+                    include_last=preset.key != "extract_first_frame",
+                )
+            elif preset.mode == "ffmpeg_half":
                 result = _ffmpeg_half_keep(video, trimmed_dir, preview_dir)
             elif preset.mode == "opencv_half":
                 cap = _require_cv2().VideoCapture(str(video))
@@ -525,13 +613,12 @@ def _process_single_preset(
             items.append(
                 {
                     "source": str(video),
-                    "output_video": result["output_video"],
-                    "preview_image": result["preview_image"],
+                    **result,
                     "status": "done",
-                    "detail": result["detail"],
                 }
             )
-            log(f"完成：{Path(result['output_video']).name}")
+            output_paths = [result.get(key) for key in ("output_video", "first_frame_image", "last_frame_image")]
+            log(f"完成：{'、'.join(Path(path).name for path in output_paths if path)}")
         except Exception as exc:
             failures.append({"source": str(video), "error": str(exc)})
             items.append(
@@ -551,6 +638,7 @@ def _process_single_preset(
         "items": items,
         "failures": failures,
         "total": total,
+        "status": "completed" if not failures else "failed" if len(failures) == total else "partial",
     }
 
 
@@ -715,5 +803,6 @@ def run_video_clip_job(
         "items": result["items"],
         "failures": result["failures"],
         "total": result["total"],
+        "status": result["status"],
         "summary_file": str(job_dir / "summary.csv"),
     }

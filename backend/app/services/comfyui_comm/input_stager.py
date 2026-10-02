@@ -30,27 +30,41 @@ def stage_input_files(job_id: str, payload: dict[str, Any], config: dict[str, An
     job_input_dir = ensure_dir(input_dir / "jobs" / job_id)
 
     image_path = _validate_source_path("输入图片", payload.get("imagePath"))
+    start_image_path = _validate_source_path("首帧图片", payload.get("startImagePath"))
+    end_image_path = _validate_source_path("尾帧图片", payload.get("endImagePath"))
     video_path = _validate_source_path("输入视频", payload.get("videoPath"))
     staged: dict[str, Any] = {
         "job_input_dir": str(job_input_dir),
         "image_ref": "",
         "image_source": "",
         "image_bytes": 0,
+        "start_image_ref": "",
+        "start_image_source": "",
+        "start_image_bytes": 0,
+        "end_image_ref": "",
+        "end_image_source": "",
+        "end_image_bytes": 0,
         "video_ref": "",
         "video_source": "",
         "video_bytes": 0,
         "staged_files": [],
     }
 
-    if image_path:
-        if image_path.suffix.lower() not in SUPPORTED_IMAGE_EXTENSIONS:
-            raise RuntimeError(f"不支持的图片格式：{image_path.name}")
-        image_name = f"input{image_path.suffix.lower()}"
+    for image_key, source_path, basename in (
+        ("image", image_path, "input"),
+        ("start_image", start_image_path, "start"),
+        ("end_image", end_image_path, "end"),
+    ):
+        if source_path is None:
+            continue
+        if source_path.suffix.lower() not in SUPPORTED_IMAGE_EXTENSIONS:
+            raise RuntimeError(f"不支持的图片格式：{source_path.name}")
+        image_name = f"{basename}{source_path.suffix.lower()}"
         image_target = job_input_dir / image_name
-        shutil.copy2(image_path, image_target)
-        staged["image_ref"] = workflow_ref("jobs", job_id, image_name)
-        staged["image_source"] = str(image_path)
-        staged["image_bytes"] = image_target.stat().st_size
+        shutil.copy2(source_path, image_target)
+        staged[f"{image_key}_ref"] = workflow_ref("jobs", job_id, image_name)
+        staged[f"{image_key}_source"] = str(source_path)
+        staged[f"{image_key}_bytes"] = image_target.stat().st_size
         staged["staged_files"].append(str(image_target))
 
     if video_path:

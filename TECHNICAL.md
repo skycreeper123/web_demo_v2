@@ -2,8 +2,9 @@
 
 ## 1. 项目定位
 
-`web_demo` 是一个本地运行的轻量单体项目，当前覆盖 3 类工作流：
+`web_demo` 是一个可在本机或服务器运行的轻量单体项目，当前包含 4 个工作台：
 
+- `视频流程工作台`
 - `Prompt 生成工作台`
 - `本地 Comfy 通信工作台`
 - `视频剪辑工作台`
@@ -285,7 +286,7 @@ bindings 自动推断规则：
 - 定义 `CLIP_PRESETS`
 - 暴露预设列表
 - 执行本地批处理
-- 支持单文件夹裁切与双文件夹顺序合并
+- 支持单文件夹裁切、双文件夹顺序合并与首尾帧提取
 - 写出 `manifest.json` 和 `summary.csv`
 
 当前预设包括：
@@ -303,7 +304,12 @@ bindings 自动推断规则：
 - `tail_30pct`
 - `tail_50pct`
 - `tail_70pct`
+- `extract_first_frame`
+- `extract_last_frame`
+- `extract_first_last_frames`
 - `merge_pairwise`
+
+首尾帧预设使用 `extract_frames` 模式，通过现有 `/api/clip/run` 提交。OpenCV 顺序解码至末尾获取最后一个可解码帧，不依赖帧数元数据定位；PNG 通过 `imencode` 与 `Path.write_bytes` 写出，兼容 Windows 中文路径。结果中的 `first_frame_image` / `last_frame_image` 记录图片路径，未请求的一项为空，`output_video` 为空。单目录任务返回 `completed` / `partial` / `failed`，前端在三种终态停止轮询。
 
 ## 6. 业务流程
 
@@ -641,7 +647,46 @@ CSV 行优先字段：
 - `overwrite` 当前更多是兼容字段；由于默认按任务时间戳目录输出，跨任务运行一般不会直接覆盖旧结果
 - LLM 调用层缺少完整的重试、限流、多供应商适配
 
-## 12. 后续扩展建议
+## 12. 视频流程编排
+
+`video_flow_service.py` 将单条原视频组织为串行步骤。`video-flows.js` 提供独立入口、持久化历史、步骤编辑和产物预览。复用 `OpenAICompatibleClient` 和 `run_comfy_job`，媒体处理由 `video_flow_media.py` 的 FFmpeg 操作完成。
+
+### 12.1 状态与素材
+
+- 配方：`spatial`、`prefix`、`suffix`、`mixed`。混合固定先空间再时间，可选择时间替换方向。
+- 流程状态：`draft / running / ready / completed / failed`；步骤状态：`pending / running / completed / failed`。
+- JSON 清单写到 `output/video_flows/<id>/flow.json`，采用临时文件原子替换；运行日志及工作线程由原 SQLite JobStore 管理。
+- 每步产物使用命名键登记到 `artifacts`，如 `source_video / start_image / boundary_frame / replacement_video / final_video`。
+- 每次执行使用独立 `attempt_NNN` 目录；Comfy 阶段使用独立作业编号，避免首图、尾图或参考图覆盖先前阶段的暂存文件。
+- 修改或重跑上游会撤销该步和后续步骤的有效产物引用。旧磁盘文件保留，不作为当前结果再使用。
+- 同一流程只允许一个工作线程。停止请求只在步骤边界生效。进程重启时无法续接的步骤标记失败，避免假装仍在执行。
+
+### 12.2 模型与媒体约定
+
+三个生产角色固定映射到项目模板：V5 输出节点 `1400`、Qwen 输出节点 `144`、Wan 2.2 输出节点 `145`。运行前验证绑定与输出节点存在，模板改变时明确报错。指定输出节点无文件时不能退回对比视频。
+
+Comfy 新增 `start_image_ref / end_image_ref`，分别来自表单或 CSV 的 `start_image_path / end_image_path`；文件投递为各自的 `start.ext / end.ext`。Qwen 正负提示词按 conditioning 上游关系推断，避免把正向文字填入负向分支。
+
+V5 的前后景选择映射为 RMBG `invert_output`，新流程关闭 77 帧加载上限。I2V 使用 16fps，帧数向上选择 `4n+1`；成片阶段将生成段时长匹配待替换区间。混合任务先将空间结果匹配原片时间轴，再进行裁切。新媒体路径统一原片帧率和尺寸（等比缩放补边），可映射原片音轨；不改动旧剪辑工作台预设。
+
+自动 Prompt 只复用原模块 API 配置，使用每步专用指令和实际素材，明确禁止 Mock 回退。双图提示词同时输入首尾两张图。手动保存正向提示词后可绕过该步的 LLM 调用。
+
+### 12.3 接口
+
+| 接口 | 用途 |
+| --- | --- |
+| `GET /api/video-flows` | 流程历史 |
+| `GET /api/video-flows/options` | 模式及固定模板说明 |
+| `POST /api/video-flows` | 创建配置，不执行生成 |
+| `GET /api/video-flows/<id>` | 当前步骤、配置、产物和错误 |
+| `POST /api/video-flows/<id>/run` | `stepId` 可选；`runAll` 控制单步或连续执行 |
+| `POST /api/video-flows/<id>/stop` | 当前步骤结束后停止 |
+| `POST /api/video-flows/<id>/steps/<stepId>` | 修改提示词、负向提示词或指令，并作废后续结果 |
+| `GET /api/video-flows/<id>/files/<artifactKey>` | 流式读取已登记素材，支持 Range 视频预览 |
+
+生成任务继续使用 `GET /api/jobs/<jobId>` 获取日志。上传复用 `/api/comfy/upload`。流程界面按真实完成步骤显示进度，不以单次工作线程结束作为全流程结束。
+
+## 13. 后续扩展建议
 
 建议优先级：
 

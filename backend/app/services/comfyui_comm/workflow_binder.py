@@ -124,9 +124,80 @@ def _looks_like_negative_title(title_lower: str) -> bool:
     return any(token in title_lower for token in ("negative", "负向", "反向"))
 
 
+def _linked_node(value: Any, workflow: dict[str, Any]) -> str | None:
+    if isinstance(value, list) and len(value) == 2 and str(value[0]) in workflow:
+        return str(value[0])
+    return None
+
+
+def _infer_prompt_roles(workflow: dict[str, Any]) -> dict[str, set[str]]:
+    """Follow sampler conditioning back to text encoders and their text sources."""
+    roles: dict[str, set[str]] = {}
+
+    def visit(node_id: str, role: str, seen: set[str]) -> None:
+        if node_id in seen:
+            return
+        seen.add(node_id)
+        node = workflow[node_id]
+        inputs = node.get("inputs") or {}
+        class_type = str(node.get("class_type") or "").lower()
+        text_input = next((name for name in ("prompt", "text", "value") if name in inputs), None)
+        is_text_source = "textencode" in class_type or "prompt" in class_type or class_type.startswith("primitivestring")
+        if text_input and is_text_source:
+            roles.setdefault(node_id, set()).add(role)
+            upstream = _linked_node(inputs[text_input], workflow)
+            if upstream:
+                visit(upstream, role, seen)
+            return
+        # Only follow conditioning links here: model/image/CLIP branches can be
+        # shared between positive and negative encoders without sharing text.
+        for name, value in inputs.items():
+            if "conditioning" in name.lower() or name.lower() in {"positive", "negative", "cond"}:
+                upstream = _linked_node(value, workflow)
+                if upstream:
+                    visit(upstream, role, seen)
+
+    for node in workflow.values():
+        inputs = node.get("inputs") or {}
+        for name, role in (("positive", "positive_prompt"), ("negative", "negative_prompt")):
+            upstream = _linked_node(inputs.get(name), workflow)
+            if upstream:
+                visit(upstream, role, set())
+    return roles
+
+
+def _infer_image_roles(workflow: dict[str, Any]) -> dict[str, set[str]]:
+    roles: dict[str, set[str]] = {}
+
+    def visit(node_id: str, role: str, seen: set[str]) -> None:
+        if node_id in seen:
+            return
+        seen.add(node_id)
+        node = workflow[node_id]
+        inputs = node.get("inputs") or {}
+        if "loadimage" in str(node.get("class_type") or "").lower():
+            roles.setdefault(node_id, set()).add(role)
+            return
+        for name, value in inputs.items():
+            if name.lower() in {"image", "images", "start_image", "end_image"} or name.lower().startswith("image_"):
+                upstream = _linked_node(value, workflow)
+                if upstream:
+                    visit(upstream, role, seen)
+
+    for node in workflow.values():
+        inputs = node.get("inputs") or {}
+        for name, role in (("start_image", "start_image_ref"), ("end_image", "end_image_ref")):
+            upstream = _linked_node(inputs.get(name), workflow)
+            if upstream:
+                visit(upstream, role, set())
+    return roles
+
+
 def _infer_bindings(workflow: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
     bindings: dict[str, list[dict[str, Any]]] = {}
     generic_seed_targets: list[dict[str, Any]] = []
+    prompt_roles = _infer_prompt_roles(workflow)
+    image_roles = _infer_image_roles(workflow)
 
     for node_id, node_payload in workflow.items():
         if not isinstance(node_payload, dict):
@@ -137,9 +208,20 @@ def _infer_bindings(workflow: dict[str, Any]) -> dict[str, list[dict[str, Any]]]
 
         class_type_lower = str(node_payload.get("class_type") or "").strip().lower()
         title_lower = _node_title_lower(node_payload)
+        node_prompt_roles = prompt_roles.get(str(node_id), set())
+        prompt_key = next(iter(node_prompt_roles)) if len(node_prompt_roles) == 1 else (
+            "negative_prompt" if _looks_like_negative_title(title_lower) else "positive_prompt"
+        )
 
         if "loadimage" in class_type_lower and "image" in inputs:
-            _append_binding(bindings, "image_ref", {"node": node_id, "input": "image", "required": True})
+            node_image_roles = image_roles.get(str(node_id), set())
+            image_key = next(iter(node_image_roles)) if len(node_image_roles) == 1 else "image_ref"
+            if not node_image_roles:
+                if any(token in title_lower for token in ("首帧", "首图", "start image", "start_image", "first frame")):
+                    image_key = "start_image_ref"
+                elif any(token in title_lower for token in ("尾帧", "尾图", "end image", "end_image", "last frame")):
+                    image_key = "end_image_ref"
+            _append_binding(bindings, image_key, {"node": node_id, "input": "image", "required": True})
 
         for video_input_name in ("video", "path", "filename", "file"):
             if "loadvideo" in class_type_lower and video_input_name in inputs:
@@ -153,16 +235,15 @@ def _infer_bindings(workflow: dict[str, Any]) -> dict[str, list[dict[str, Any]]]
             or "prompt" in class_type_lower
             or _looks_like_prompt_title(title_lower)
         ):
-            _append_binding(bindings, "positive_prompt", {"node": node_id, "input": "prompt", "required": True})
+            _append_binding(bindings, prompt_key, {"node": node_id, "input": "prompt", "required": prompt_key == "positive_prompt"})
         elif "text" in inputs and ("cliptextencode" in class_type_lower or "prompt" in class_type_lower):
-            prompt_key = "negative_prompt" if _looks_like_negative_title(title_lower) else "positive_prompt"
             _append_binding(bindings, prompt_key, {"node": node_id, "input": "text", "required": prompt_key == "positive_prompt"})
-        elif "value" in inputs and class_type_lower.startswith("primitivestring") and _looks_like_prompt_title(title_lower) and not _looks_like_negative_title(title_lower):
+        elif "value" in inputs and class_type_lower.startswith("primitivestring") and prompt_key == "positive_prompt" and (node_prompt_roles or _looks_like_prompt_title(title_lower)):
             _append_binding(bindings, "positive_prompt", {"node": node_id, "input": "value", "required": True})
 
         if "negative_prompt" in inputs:
             _append_binding(bindings, "negative_prompt", {"node": node_id, "input": "negative_prompt"})
-        elif "value" in inputs and class_type_lower.startswith("primitivestring") and _looks_like_negative_title(title_lower):
+        elif "value" in inputs and class_type_lower.startswith("primitivestring") and prompt_key == "negative_prompt" and (node_prompt_roles or _looks_like_negative_title(title_lower)):
             _append_binding(bindings, "negative_prompt", {"node": node_id, "input": "value"})
 
         if "filename_prefix" in inputs:
@@ -191,7 +272,7 @@ def describe_workflow_inputs(template: dict[str, Any]) -> dict[str, Any]:
         raise RuntimeError("Bindings 必须是对象。")
     occupied = set()
     for key, targets in bindings.items():
-        if key not in {"image_ref", "video_ref", "positive_prompt", "negative_prompt", "seed", "output_prefix", "workflow_type"} and not key.startswith("params."):
+        if key not in {"image_ref", "start_image_ref", "end_image_ref", "video_ref", "positive_prompt", "negative_prompt", "seed", "output_prefix", "workflow_type"} and not key.startswith("params."):
             raise RuntimeError(f"不支持的绑定来源：{key}；自定义参数请使用 params.参数名。")
         if not isinstance(targets, list):
             raise RuntimeError(f"binding '{key}' 必须是数组。")
@@ -243,7 +324,7 @@ def describe_workflow_inputs(template: dict[str, Any]) -> dict[str, Any]:
                        "type": kind, "default": str(value) if kind == "int" and value is not None else value,
                        "required": any(t.get("required") for t in targets), "targets": targets,
                        "advanced": key.startswith("params.node_")})
-    order = {key: index for index, key in enumerate(("image_ref", "video_ref", "positive_prompt", "negative_prompt", "seed", "output_prefix"))}
+    order = {key: index for index, key in enumerate(("image_ref", "start_image_ref", "end_image_ref", "video_ref", "positive_prompt", "negative_prompt", "seed", "output_prefix"))}
     result["input_fields"] = sorted(fields, key=lambda field: order.get(field["key"], 100))
     return result
 
@@ -344,6 +425,9 @@ def bind_workflow(
     workflow = copy.deepcopy(template_payload.get("workflow") or {})
     if not workflow:
         raise RuntimeError("工作流模板为空，请提供有效的 API workflow JSON。")
+    output_node_id = str(payload.get("outputNodeId") or "").strip()
+    if output_node_id and output_node_id not in workflow:
+        raise RuntimeError(f"工作流中找不到指定输出节点：{output_node_id}")
 
     bindings = template_payload.get("bindings") or {}
     if not isinstance(bindings, dict):
@@ -353,6 +437,8 @@ def bind_workflow(
         "positive_prompt": payload.get("positivePrompt"),
         "negative_prompt": payload.get("negativePrompt"),
         "image_ref": staged_inputs.get("image_ref") or "",
+        "start_image_ref": staged_inputs.get("start_image_ref") or "",
+        "end_image_ref": staged_inputs.get("end_image_ref") or "",
         "video_ref": staged_inputs.get("video_ref") or "",
         "seed": payload.get("seed"),
         "output_prefix": str(payload.get("outputPrefix") or ""),

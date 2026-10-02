@@ -9,11 +9,15 @@ const VIEW_META = {
   },
   clipStudio: {
     title: "视频剪辑工作台",
-    subtitle: "本地批量裁切与合并。",
+    subtitle: "本地批量裁切、合并与首尾帧提取。",
   },
   comfyStudio: {
     title: "本地 Comfy 通信工作台",
     subtitle: "连接本机 ComfyUI 并提交工作流。",
+  },
+  videoFlows: {
+    title: "视频流程工作台",
+    subtitle: "从素材、提示词到生成与拼接，逐步检查或连续执行。",
   },
 };
 
@@ -109,6 +113,7 @@ const els = {
   promptStudioView: document.getElementById("promptStudioView"),
   clipStudioView: document.getElementById("clipStudioView"),
   comfyStudioView: document.getElementById("comfyStudioView"),
+  videoFlowsView: document.getElementById("videoFlowsView"),
   goPromptStudioBtn: document.getElementById("goPromptStudioBtn"),
   goClipStudioBtn: document.getElementById("goClipStudioBtn"),
   goComfyStudioBtn: document.getElementById("goComfyStudioBtn"),
@@ -131,6 +136,7 @@ const els = {
   clipOutputRootValue: document.getElementById("clipOutputRootValue"),
   clipSingleModeBtn: document.getElementById("clipSingleModeBtn"),
   clipMergeModeBtn: document.getElementById("clipMergeModeBtn"),
+  clipFramesModeBtn: document.getElementById("clipFramesModeBtn"),
   clipModeDescription: document.getElementById("clipModeDescription"),
   clipPresetSelect: document.getElementById("clipPresetSelect"),
   clipPresetDescription: document.getElementById("clipPresetDescription"),
@@ -709,6 +715,11 @@ function updatePromptModuleNavigation() {
 }
 
 function updateViewHeader() {
+  if (state.currentView === "videoFlows") {
+    els.viewTitle.textContent = VIEW_META.videoFlows.title;
+    els.viewSubtitle.textContent = VIEW_META.videoFlows.subtitle;
+    return;
+  }
   if (state.currentView === "promptStudio") {
     const moduleMeta = PROMPT_MODULES[state.activePromptModule];
     els.viewTitle.textContent = VIEW_META.promptStudio.title;
@@ -748,7 +759,9 @@ function setView(view, moduleKey = state.activePromptModule) {
   els.promptStudioView.hidden = view !== "promptStudio";
   els.clipStudioView.hidden = view !== "clipStudio";
   els.comfyStudioView.hidden = view !== "comfyStudio";
+  els.videoFlowsView.hidden = view !== "videoFlows";
   els.navBackBtn.disabled = view === "home";
+  document.dispatchEvent(new CustomEvent("studio:viewchange", { detail: { view } }));
 
   if (view === "promptStudio") {
     setActivePromptModule(moduleKey);
@@ -1032,9 +1045,9 @@ let comfyUploadsPending = 0;
 
 function renderComfyInputFields(fields) {
   comfyInputSchema = fields;
-  const labels = {image_ref: "参考图片路径", video_ref: "输入视频路径", positive_prompt: "正向提示词", negative_prompt: "负向提示词", seed: "随机种子", output_prefix: "输出前缀"};
+  const labels = {image_ref: "参考图片路径", start_image_ref: "首帧图片路径", end_image_ref: "尾帧图片路径", video_ref: "输入视频路径", positive_prompt: "正向提示词", negative_prompt: "负向提示词", seed: "随机种子", output_prefix: "输出前缀"};
   const fieldHtml = (field, index) => {
-    const media = ["image_ref", "video_ref"].includes(field.key);
+    const media = ["image_ref", "start_image_ref", "end_image_ref", "video_ref"].includes(field.key);
     const value = media || field.key === "output_prefix" ? "" : (field.default ?? "");
     const attrs = `data-comfy-field="${index}"`;
     const control = field.type === "bool"
@@ -1043,7 +1056,7 @@ function renderComfyInputFields(fields) {
         ? `<textarea class="textarea comfy-field-text" ${attrs} rows="2" placeholder="${media ? "后端可访问的文件路径" : ""}">${escapeHtml(String(value))}</textarea>`
         : `<input class="input" ${attrs} type="text" inputmode="decimal" value="${escapeHtml(String(value))}" />`;
     const targets = field.targets.map(t => `${t.node}.${t.input}`).join(", ");
-    const upload = media ? `<input type="file" data-comfy-upload="${index}" accept="${field.key === "image_ref" ? ".png,.jpg,.jpeg,.webp,.bmp" : ".mp4,.mov,.avi,.mkv,.webm,.m4v"}" /><small data-upload-status="${index}">可上传文件，或填写上方路径（最大 1 GB）。</small>` : "";
+    const upload = media ? `<input type="file" data-comfy-upload="${index}" accept="${field.key !== "video_ref" ? ".png,.jpg,.jpeg,.webp,.bmp" : ".mp4,.mov,.avi,.mkv,.webm,.m4v"}" /><small data-upload-status="${index}">可上传文件，或填写上方路径（最大 1 GB）。</small>` : "";
     return `<label class="prompt-field comfy-auto-field" data-comfy-search="${escapeHtml(`${field.label} ${field.key} ${targets}`.toLowerCase())}"><span>${escapeHtml(labels[field.key] || field.label)}${field.required ? " *" : ""}</span>${control}${upload}<small>${escapeHtml(field.key)} → ${escapeHtml(targets)}</small></label>`;
   };
   const basic = fields.map((f, i) => !f.advanced ? fieldHtml(f, i) : "").join("");
@@ -1241,7 +1254,7 @@ function updateClipSummary() {
   els.clipInputCount.textContent = isMergeMode ? "2" : "1";
   els.clipInputMeta.textContent = isMergeMode
     ? "双目录配对"
-    : "单目录裁切";
+    : state.clip.mode === "frames" ? "单目录提取图片" : "单目录裁切";
   els.clipOutputRootValue.textContent = normalizeDisplayPath(els.clipOutputDir.value.trim()) || "output/video_clip";
 }
 
@@ -1249,7 +1262,9 @@ function renderClipPresetOptions() {
   const availablePresets = state.clip.presets.filter((preset) => (
     state.clip.mode === "merge"
       ? preset.mode === "merge_pairwise"
-      : preset.mode !== "merge_pairwise"
+      : state.clip.mode === "frames"
+        ? preset.mode === "extract_frames"
+        : !["merge_pairwise", "extract_frames"].includes(preset.mode)
   ));
 
   if (!availablePresets.length) {
@@ -1284,21 +1299,26 @@ function renderClipPresetOptions() {
 }
 
 function setClipMode(mode) {
-  if (!["single", "merge"].includes(mode)) return;
+  if (!["single", "merge", "frames"].includes(mode)) return;
   state.clip.mode = mode;
-  const isSingleMode = mode === "single";
 
-  els.clipSingleModeBtn.classList.toggle("btn-primary", isSingleMode);
-  els.clipSingleModeBtn.classList.toggle("btn-ghost", !isSingleMode);
-  els.clipMergeModeBtn.classList.toggle("btn-primary", !isSingleMode);
-  els.clipMergeModeBtn.classList.toggle("btn-ghost", isSingleMode);
-  els.clipSingleModeBtn.setAttribute("aria-pressed", isSingleMode ? "true" : "false");
-  els.clipMergeModeBtn.setAttribute("aria-pressed", isSingleMode ? "false" : "true");
-  els.clipSingleInputField.hidden = !isSingleMode;
-  els.clipMergeInputFields.hidden = isSingleMode;
-  els.clipModeDescription.textContent = isSingleMode
-    ? "单目录批量裁切。"
-    : "双目录顺序合并。";
+  for (const [buttonMode, button] of [
+    ["single", els.clipSingleModeBtn],
+    ["merge", els.clipMergeModeBtn],
+    ["frames", els.clipFramesModeBtn],
+  ]) {
+    const selected = mode === buttonMode;
+    button.classList.toggle("btn-primary", selected);
+    button.classList.toggle("btn-ghost", !selected);
+    button.setAttribute("aria-pressed", String(selected));
+  }
+  els.clipSingleInputField.hidden = mode === "merge";
+  els.clipMergeInputFields.hidden = mode !== "merge";
+  els.clipModeDescription.textContent = {
+    single: "单目录批量裁切。",
+    merge: "双目录顺序合并。",
+    frames: "批量提取首帧 / 尾帧为原始分辨率 PNG 图片，保留源视频。提取尾帧需读取完整视频，长视频耗时较多。",
+  }[mode];
 
   renderClipPresetOptions();
 }
@@ -1344,15 +1364,21 @@ function renderClipOutputs(items) {
     const source = item.source
       ? clipPathName(item.source)
       : `${clipPathName(item.source_a)} + ${clipPathName(item.source_b)}`;
-    const outputVideo = item.output_video ? `视频：${clipPathName(item.output_video)}` : "未生成输出视频";
-    const preview = item.preview_image ? ` · 预览：${clipPathName(item.preview_image)}` : "";
+    const outputFiles = [];
+    if (item.output_video) outputFiles.push(`视频：${clipPathName(item.output_video)}`);
+    if (item.first_frame_image) outputFiles.push(`首帧：${clipPathName(item.first_frame_image)}`);
+    if (item.last_frame_image) outputFiles.push(`尾帧：${clipPathName(item.last_frame_image)}`);
+    if (item.preview_image && !item.first_frame_image && !item.last_frame_image) {
+      outputFiles.push(`预览：${clipPathName(item.preview_image)}`);
+    }
+    const outputSummary = outputFiles.join(" · ") || "未生成输出文件";
     const isDone = item.status === "done";
     return `
       <div class="output-row">
         <div>
           <strong>${escapeHtml(source)}</strong>
-          <small>${escapeHtml(item.detail || outputVideo)}</small>
-          <small>${escapeHtml(`${outputVideo}${preview}`)}</small>
+          <small>${escapeHtml(item.detail || outputSummary)}</small>
+          <small>${escapeHtml(outputSummary)}</small>
         </div>
         <span class="status-pill ${isDone ? "status-matched" : "status-missing"}">${isDone ? "已完成" : "失败"}</span>
       </div>
@@ -1373,11 +1399,13 @@ function renderClipJob(job) {
   els.clipProgressText.textContent = toReadableJobStatus(job.status);
   els.clipProgressDetail.textContent = job.status === "completed"
     ? "已完成"
-    : job.status === "failed"
-      ? `任务失败：${job.error || "unknown"}`
-      : job.status === "running"
-        ? "处理中"
-        : "等待";
+    : job.status === "partial"
+      ? "部分视频处理失败，请查看结果和日志。"
+      : job.status === "failed"
+        ? `任务失败：${job.error || "unknown"}`
+        : job.status === "running"
+          ? "处理中"
+          : "等待";
   els.clipOutputRootValue.textContent = normalizeDisplayPath(job.output_dir)
     || normalizeDisplayPath(els.clipOutputDir.value.trim())
     || "output/video_clip";
@@ -1395,7 +1423,7 @@ async function startClipJob() {
     }
 
     const outputDir = els.clipOutputDir.value.trim() || "output/video_clip";
-    if (state.clip.mode === "single" && !els.clipInputDir.value.trim()) {
+    if (state.clip.mode !== "merge" && !els.clipInputDir.value.trim()) {
       throw new Error("请填写视频输入文件夹路径。");
     }
     if (state.clip.mode === "merge" && (!els.clipInputDirA.value.trim() || !els.clipInputDirB.value.trim())) {
@@ -1442,14 +1470,16 @@ async function pollClipJob() {
     renderClipJob(job);
     setClipLog(job.logs || []);
 
-    if (job.status === "completed" || job.status === "failed") {
+    if (["completed", "partial", "failed"].includes(job.status)) {
       els.startClipBtn.disabled = false;
       clearInterval(state.clip.pollTimer);
       state.clip.pollTimer = null;
     }
   };
   await tick();
-  state.clip.pollTimer = setInterval(tick, 1000);
+  if (state.clip.job && !["completed", "partial", "failed"].includes(state.clip.job.status)) {
+    state.clip.pollTimer = setInterval(tick, 1000);
+  }
 }
 
 async function openClipOutput() {
@@ -2669,6 +2699,7 @@ function bindEvents() {
   els.goPromptStudioBtn.addEventListener("click", () => setView("promptStudio", state.activePromptModule));
   els.goClipStudioBtn.addEventListener("click", () => setView("clipStudio"));
   els.goComfyStudioBtn.addEventListener("click", () => setView("comfyStudio"));
+  document.getElementById("goVideoFlowsBtn").addEventListener("click", () => setView("videoFlows"));
 
   document.addEventListener("click", (event) => {
     const overviewButton = event.target.closest("[data-open-prompt-module]");
@@ -2872,7 +2903,9 @@ async function init() {
   bindEvents();
   await registerBrowserSession();
   startBrowserHeartbeat();
-  setView("home");
+  let initialView = "home";
+  try { if (localStorage.getItem("studio:last-view") === "videoFlows") initialView = "videoFlows"; } catch {}
+  setView(initialView);
   await loadClipPresets();
   setClipMode(state.clip.mode);
   updateClipSummary();
