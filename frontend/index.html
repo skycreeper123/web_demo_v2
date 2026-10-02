@@ -169,7 +169,7 @@
           <article id="flowCreatePanel" class="card panel">
             <div class="section-header"><div><p class="panel-kicker">Create a Flow</p><h2 id="flowCreateTitle">创建视频流程</h2></div><span id="flowCreateBadge" class="chip chip-soft">一条原视频，一个流程</span></div>
             <form id="flowCreateForm">
-              <label class="prompt-field"><span>输入方式</span><select id="flowInputMode" class="input"><option value="single">单条素材</option><option value="batch">CSV 批量素材 · 每行一组</option></select></label>
+              <label class="prompt-field"><span>输入方式</span><select id="flowInputMode" class="input"><option value="batch" selected>批量素材 · 文件夹自动匹配</option><option value="single">单条素材</option></select></label>
               <div class="form-grid">
                 <label class="prompt-field"><span>流程名称（可选）</span><input id="flowName" class="input" maxlength="120" placeholder="例如：镜头 01 · 前段替换" /></label>
                 <label class="prompt-field"><span>替换方式</span><select id="flowMode" class="input"><option value="spatial">局部空间替换</option><option value="prefix">局部时间 · 替换前段</option><option value="suffix">局部时间 · 替换后段</option><option value="mixed">混合替换 · 先空间后时间</option></select></label>
@@ -178,16 +178,28 @@
               </div>
               <div id="flowRecipe" class="flow-recipe"></div>
               <section id="batchImportPanel" class="batch-import-panel" hidden>
-                <div class="section-header"><div><h2>导入素材表</h2><p class="panel-note">一行对应一组素材，共用上方流程类型。填写服务器可读取的完整文件路径。</p></div><button id="batchTemplateBtn" class="btn btn-ghost" type="button">下载 CSV 模板</button></div>
-                <label class="flow-upload-label">选择 UTF-8 CSV 文件<input id="batchCsvFile" type="file" accept=".csv,text/csv" /></label>
-                <label class="prompt-field"><span>或粘贴、编辑 CSV 内容</span><textarea id="batchCsvText" class="textarea batch-csv-text" rows="5" spellcheck="false" placeholder="name,videoPath,referenceImagePath,startImagePath,endImagePath,cutSeconds,editInstruction"></textarea></label>
-                <div class="flow-create-footer"><p class="panel-note">每批 1–500 组。CSV 非空字段优先，空白字段继承下方统一参数。需保留 videoPath 列，原视频可逐行填写或使用统一素材。支持引号内逗号、换行及 UTF-8 BOM。</p><button id="batchParseBtn" class="btn btn-ghost" type="button">解析并预览</button></div>
-                <div id="batchCsvSummary" class="flow-notice" role="status" aria-live="polite">尚未导入素材表。</div>
-                <div id="batchCsvErrors" class="flow-error" role="alert" hidden></div>
-                <div id="batchCsvPreview" class="batch-table-wrap" hidden></div>
-                <p class="panel-note">只检查表格与必填项；创建时由服务器检查文件。批次按组串行执行，一组失败继续处理下一组。</p>
+                <div class="section-header"><div><h2>准备素材目录</h2><p class="panel-note">视频与图片按同名自动成组，生成数量来自实际素材，无需填写次数或整理中间 CSV。</p></div></div>
+                <label class="prompt-field"><span>素材来源</span><select id="batchMaterialSource" class="input"><option value="directories">服务器上的素材目录</option><option value="files">浏览器选择文件夹并上传</option><option value="csv">高级：CSV 素材表</option></select></label>
+                <div id="batchDirectoryPanel">
+                  <p id="batchRoleHint" class="panel-note"></p>
+                  <div id="batchDirectoryInputs" class="batch-directory-grid"></div>
+                  <div class="flow-create-footer"><p class="panel-note">例如 a001.mp4 配 a001.png。_1 / _2 始终是补充参考图，不是首尾帧。缺少必需图片或重名冲突时会停下并列出问题。</p><button id="batchScanBtn" class="btn btn-ghost" type="button">检查匹配（可选）</button></div>
+                  <div id="batchScanSummary" class="flow-notice" role="status" aria-live="polite">准备好目录，点击下方“一键生成”即可自动匹配并开始。</div>
+                  <div id="batchScanErrors" class="flow-error" role="alert" hidden></div>
+                  <div id="batchScanPreview" class="batch-table-wrap" hidden></div>
+                  <button id="batchExpandMatchesBtn" class="btn btn-ghost" type="button" hidden>展开全部匹配</button>
+                </div>
+                <div id="batchCsvPanel" hidden>
+                  <div class="section-header"><h2>CSV 素材表</h2><button id="batchTemplateBtn" class="btn btn-ghost" type="button">下载 CSV 模板</button></div>
+                  <label class="flow-upload-label">选择 UTF-8 CSV 文件<input id="batchCsvFile" type="file" accept=".csv,text/csv" /></label>
+                  <label class="prompt-field"><span>或粘贴、编辑 CSV 内容</span><textarea id="batchCsvText" class="textarea batch-csv-text" rows="5" spellcheck="false" placeholder="name,videoPath,referenceImagePath,startImagePath,endImagePath,cutSeconds,editInstruction"></textarea></label>
+                  <div class="flow-create-footer"><p class="panel-note">CSV 非空字段优先，空白字段继承统一参数。支持引号内逗号、换行和 UTF-8 BOM；其中的文件路径须可被服务器读取。</p><button id="batchParseBtn" class="btn btn-ghost" type="button">解析并预览</button></div>
+                  <div id="batchCsvSummary" class="flow-notice" role="status" aria-live="polite">尚未导入素材表。</div>
+                  <div id="batchCsvErrors" class="flow-error" role="alert" hidden></div>
+                  <div id="batchCsvPreview" class="batch-table-wrap" hidden></div>
+                </div>
               </section>
-              <p id="batchDefaultsHint" class="panel-note" hidden>统一默认素材与参数（可选）：CSV 留空时继承这里的值。不同组可使用不同图片、切点和编辑需求。</p>
+              <p id="batchDefaultsHint" class="panel-note" hidden>共用素材与参数（可选）：未匹配到专属图片时可使用这里的共用图片；不同素材仍各自生成一条视频。</p>
               <div class="flow-media-fields">
                 <div id="flowVideoField" class="flow-source-field"><label class="prompt-field" for="flowVideoPath"><span>原视频 <span aria-hidden="true">*</span></span><input id="flowVideoPath" class="input" required placeholder="服务器上的完整视频路径，例如 /data/source.mp4" /></label><label class="flow-upload-label">或上传视频<input id="flowVideoUpload" type="file" accept=".mp4,.mov,.avi,.mkv,.webm,.m4v" data-flow-upload="flowVideoPath" /></label><small id="flowVideoPathUploadStatus" class="panel-note">单文件最大 1 GB。</small><div id="flowVideoPathPreview" class="flow-source-preview"></div></div>
                 <div id="flowReferenceField" class="flow-source-field"><label class="prompt-field" for="flowReferencePath"><span>空间替换参考图 <span aria-hidden="true">*</span></span><input id="flowReferencePath" class="input" placeholder="参考人物或背景图片的完整路径" /></label><label class="flow-upload-label">或上传参考图<input type="file" accept=".png,.jpg,.jpeg,.webp,.bmp" data-flow-upload="flowReferencePath" /></label><small id="flowReferencePathUploadStatus" class="panel-note"></small><div id="flowReferencePathPreview" class="flow-source-preview"></div></div>
@@ -203,6 +215,7 @@
               <p id="flowCreateNote" class="panel-note">创建只保存素材与步骤。点击执行后才开始生成。</p>
             </form>
           </article>
+          <article id="batchPreparationPanel" class="card panel" hidden><h2>素材准备进度</h2><pre id="batchPreparationLogs" class="log-box" aria-live="polite"></pre></article>
           <section id="batchDetail" hidden>
             <article class="card panel flow-summary">
               <div class="section-header"><div><p class="panel-kicker">Video Batch</p><h2 id="batchDetailTitle">视频批次</h2><p id="batchDetailMeta" class="panel-note"></p></div><span id="batchStatus" class="flow-status"></span></div>
@@ -212,7 +225,7 @@
               <p id="batchRunHint" class="panel-note">按组串行执行；一组失败后继续下一组。</p><p id="batchReviewNotice" class="flow-error" role="alert" hidden></p><p id="batchError" class="flow-error" role="alert" hidden></p>
             </article>
             <article class="card panel"><div class="section-header"><h2>素材与执行结果</h2><span class="chip chip-soft">每组可打开单流程</span></div><div id="batchRows" class="batch-table-wrap"></div></article>
-            <article class="card panel"><details><summary>批次运行日志</summary><pre id="batchLogs" class="log-box">执行后显示批次日志。</pre></details></article>
+            <article class="card panel"><details open><summary>批次运行日志</summary><a id="batchLogDownload" class="batch-log-download" hidden>下载完整日志</a><pre id="batchLogs" class="log-box">执行后显示批次日志。</pre></details></article>
           </section>
           <section id="flowDetail" hidden>
             <article class="card panel flow-summary">

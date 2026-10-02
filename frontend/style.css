@@ -112,6 +112,20 @@
 .batch-counts { display: flex; gap: .7rem 1.2rem; flex-wrap: wrap; margin-top: .8rem; color: var(--muted); font-size: .9rem; }
 .batch-counts strong { color: var(--text); font-size: 1.1rem; margin-left: .3rem; }
 .batch-history { max-height: 27vh; }
+.batch-directory-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.batch-directory-card { min-width: 0; padding: .9rem; border: 1px solid var(--stroke); border-radius: 12px; background: #fff; }
+.batch-directory-card h3 { margin: 0 0 .75rem; font-size: .95rem; }
+.batch-directory-card .stack-list { margin-top: .75rem; }
+.batch-directory-card .file-summary-card { align-items: flex-start; flex-wrap: wrap; }
+.dropzone.batch-folder-dropzone { min-height: 105px; padding: .85rem; display: flex; flex-direction: column; justify-content: center; gap: .3rem; text-align: center; }
+.batch-folder-dropzone small { font-size: .77rem; color: var(--muted); }
+.batch-directory-grid.is-preparing { opacity: .7; }
+.batch-directory-grid.is-preparing .batch-folder-dropzone { cursor: wait; }
+#batchDirectoryPanel, #batchCsvPanel { display: grid; gap: .8rem; min-width: 0; }
+#batchPreparationPanel h2 { margin-top: 0; }
+#batchPreparationLogs { max-height: 220px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.batch-log-download { display: inline-block; margin-top: .8rem; color: var(--accent); }
+@media (max-width: 820px) { .batch-directory-grid { grid-template-columns: 1fr; } }
 #flowHistory { max-height: 27vh; }
 .flow-status[data-status="partial"], .flow-status[data-status="interrupted"] { background: #fff7ed; color: #9a3412; }
 .flow-status[data-status="stopped"] { background: #f1f5f9; color: #475569; }

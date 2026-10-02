@@ -692,7 +692,11 @@ V5 的前后景选择映射为 RMBG `invert_output`，新流程关闭 77 帧加�
 
 ### 12.4 批量流程
 
-`video_batch_service.py` 管理同一配方的多组素材，`video-batches.js` 提供 CSV 模板、导入预览、批次历史、行状态与成片入口。创建参数为 `{name, defaults, rows}`，`defaults` 复用单流程配置，`rows` 仅覆盖名称、素材、切点和编辑需求；所有行统一模式、方向、空间范围与自动 Prompt 来源。限制 1–500 行，先验证全体行，再保存批次和子流程，不在创建时调用模型。
+`video_batch_inputs.py` 提供服务器目录递归扫描及浏览器文件元数据匹配，沿用视频与主参考图同名、`_1 / _2` 为补充图的规则。支持输入 `{defaults, inputMode, directories, files}`：目录和文件角色均为 `videos / references / startImages / endImages`。返回匹配条目、素材角色、问题及待创建的 `rows`；浏览器素材缺少服务器路径时标记需要上传。重复候选不静默选择。纯时间模式将参考目录解释为新首图或目标尾图；混合模式的参考目录始终服务空间替换，时间目标走独立目录。
+
+`video_batch_service.py` 管理同一配方的多组素材，`video-batches.js` 提供文件夹匹配、一键执行、高级 CSV、批次历史、行状态与成片入口。创建参数为 `{name, defaults, rows}`，`defaults` 复用单流程配置，`rows` 仅覆盖名称、素材、切点和编辑需求；所有行统一模式、方向、空间范围与自动 Prompt 来源。要求至少一组，不人为限定总组数，先验证全体行，再保存批次和子流程。前端的一键执行依次调用扫描、必要的上传、创建和启动；扫描有阻塞项时整批不启动，创建成功但启动失败的批次仍可从历史恢复。
+
+补充参考图登记为独立素材，按主图、补图1、补图2顺序交给空间 Prompt 模块；Comfy V5 始终绑定主图，导出的提示词 CSV 也保留主图路径。
 
 每行引用一个独立子流程，继续使用 `video_flow_service.py` 的执行、重试、提示词和产物机制。批次由一个工作线程串行消费，同进程只允许一个批次活动；批次运行期间预留其子流程，拒绝从单流程接口独立启动或编辑。`batchId / batchLocked` 暴露所属批次及只读状态，单流程历史可过滤子流程，批次中仍可打开对应详情。
 
@@ -701,13 +705,16 @@ V5 的前后景选择映射为 RMBG `invert_output`，新流程关闭 77 帧加�
 | 接口 | 用途 |
 | --- | --- |
 | `GET /api/video-batches` | 批次历史摘要 |
+| `POST /api/video-batches/scan` | 按流程角色匹配服务器目录或浏览器文件元数据，不执行生成 |
 | `POST /api/video-batches` | 校验素材表并创建批次，不执行 |
 | `GET /api/video-batches/<id>` | 总进度、每条状态及成片引用 |
 | `POST /api/video-batches/<id>/run` | 开始或继续；`retryFailed: true` 仅重试失败 |
 | `POST /api/video-batches/<id>/stop` | 当前步骤结束后停止整批 |
 | `GET /api/video-batches/<id>/manifest.csv` | 当前结果汇总，包含状态、路径及错误 |
+| `GET /api/video-batches/<id>/logs` | 最近的批次日志，含此前重试记录 |
+| `GET /api/video-batches/<id>/logs.txt` | 完整批次日志文本 |
 
-批次作业复用 JobStore 和日志接口。内部 Comfy 的单项进度不得覆盖批次总进度；工作线程结束时采用返回的实际 `progress`，停止或中断不显示为全量完成。已有 Prompt 配置仍在各步骤真实调用时读取，不将密钥写进批次文件。
+批次作业复用 JobStore，并把带时间戳的运行日志追加到批次目录的 `batch.log`，保留各次执行与重试记录；每条完成后记录成片路径。日志 API 返回最近 1000 行，完整文本可下载。内部 Comfy 的单项进度不得覆盖批次总进度；工作线程结束时采用返回的实际 `progress`，停止或中断不显示为全量完成。已有 Prompt 配置仍在各步骤真实调用时读取，不将密钥写进批次文件。
 
 ## 13. 后续扩展建议
 

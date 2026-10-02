@@ -176,6 +176,8 @@ def build_flow(payload: dict[str, Any]) -> dict[str, Any]:
     inputs = {
         "videoPath": _input_path(payload.get("videoPath"), "原视频", _VIDEO_SUFFIXES),
         "referenceImagePath": _input_path(payload.get("referenceImagePath"), "空间替换参考图", _IMAGE_SUFFIXES, spatial),
+        "referenceAlt1Path": _input_path(payload.get("referenceAlt1Path"), "补充参考图 1", _IMAGE_SUFFIXES, False),
+        "referenceAlt2Path": _input_path(payload.get("referenceAlt2Path"), "补充参考图 2", _IMAGE_SUFFIXES, False),
         "startImagePath": _input_path(payload.get("startImagePath"), "新首图", _IMAGE_SUFFIXES, False),
         "endImagePath": _input_path(payload.get("endImagePath"), "目标尾图", _IMAGE_SUFFIXES, is_temporal and temporal == "suffix"),
         "spatialTarget": spatial_target, "temporalMode": temporal, "cutSeconds": cut,
@@ -190,6 +192,7 @@ def build_flow(payload: dict[str, Any]) -> dict[str, Any]:
         "media": {},
     }
     for key, field in (("source_video", "videoPath"), ("reference_image", "referenceImagePath"),
+                       ("reference_alt_1", "referenceAlt1Path"), ("reference_alt_2", "referenceAlt2Path"),
                        ("start_image", "startImagePath"), ("target_end", "endImagePath")):
         if inputs[field]:
             flow["artifacts"][key] = _artifact(key, inputs[field], flow_id)
@@ -213,7 +216,9 @@ def build_flow(payload: dict[str, Any]) -> dict[str, Any]:
             if spatial_target == "foreground" else
             "根据参考图替换原视频的背景环境。保留原视频的前景主体身份、外观、动作和时间节奏；仅重建背景，匹配透视、光线和遮挡关系。"
         )
-        prompt("spatial_prompt", "生成空间替换提示词", instruction, ["source_video", "reference_image"], "video")
+        spatial_media = ["source_video", "reference_image"]
+        spatial_media.extend(key for key in ("reference_alt_1", "reference_alt_2") if key in flow["artifacts"])
+        prompt("spatial_prompt", "生成空间替换提示词", instruction, spatial_media, "video")
         add("spatial_render", "生成空间替换视频", "comfy", "Wan 视频编辑 V5；按所选范围设置遮罩，并读取完整视频。",
             role="spatial", promptStep="spatial_prompt", outputKey="spatial_video")
     if is_temporal:
@@ -414,7 +419,10 @@ def _build_prompt_request(flow: dict[str, Any], step: dict[str, Any], media_path
             if background else
             "本次替换前景：参考图提供目标主体；保留原背景、镜头和动作节奏。"
         )
-        roles = ["原视频", "替换参考图"]
+        labels = {"source_video": "原视频", "reference_image": "替换主参考图", "reference_alt_1": "补充参考图 1（外观细节参考）",
+                  "reference_alt_2": "补充参考图 2（外观细节参考）"}
+        roles = [labels[key] for key in settings["media"]]
+        context.append("补充参考图用于理解同一目标的外观细节，不是视频首帧或尾帧；空间生成仍以主参考图为主要条件。")
     elif step["id"] == "first_prompt":
         context.append("本次图生图有明确编辑需求：第一张图片是要编辑的原首帧，第二张仅用于理解后续衔接；输出单张新首图的编辑提示词。")
         roles = ["原首帧（编辑源图）", "保留后段的衔接首帧（连续性参考）"]
@@ -475,7 +483,12 @@ def _run_prompt(flow: dict[str, Any], step: dict[str, Any], directory: Path, log
     csv_file = directory / "prompts.csv"
     row = {"positive_prompt": prompt, "negative_prompt": negative, "image_path": "", "video_path": "",
            "start_image_path": "", "end_image_path": ""}
-    if step["id"] == "motion_prompt":
+    if step["id"] == "spatial_prompt":
+        row.update(video_path=str(_path(flow, "source_video")), image_path=str(_path(flow, "reference_image")))
+        for key, column in (("reference_alt_1", "reference_alt_1_path"), ("reference_alt_2", "reference_alt_2_path")):
+            if key in flow["artifacts"]:
+                row[column] = str(_path(flow, key))
+    elif step["id"] == "motion_prompt":
         row.update(start_image_path=str(media_paths[0]), end_image_path=str(media_paths[1]))
     else:
         for path in media_paths:

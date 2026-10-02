@@ -132,10 +132,22 @@ class VideoBatchTests(unittest.TestCase):
         self.assertEqual(failed["completed"], 3)
         self.assertEqual(failed["failed"], 1)
         self.assertEqual(flows.get_flow(failed_id)["steps"][0]["attempts"], 1)
+        log_path = batches.resolve_log(batch["id"])
+        first_log = log_path.read_text(encoding="utf-8")
+        self.assertIn("offline-batch-job", first_log)
+        self.assertIn("offline render failure", first_log)
         self.calls.clear()
         self.run_batch(batch, retry_failed=True, job_id="retry-job")
         self.assertEqual(self.calls, [(failed_id, "spatial_render"), (failed_id, "finish")])
-        self.assertEqual(batches.get_batch(batch["id"])["completed"], 4)
+        final = batches.get_batch(batch["id"])
+        self.assertEqual(final["completed"], 4)
+        complete_log = log_path.read_text(encoding="utf-8")
+        self.assertTrue(complete_log.startswith(first_log))
+        self.assertIn("retry-job", complete_log)
+        for row in final["rows"]:
+            self.assertIn(row["name"], complete_log)
+            self.assertIn(row["finalVideo"]["path"], complete_log)
+        self.assertTrue(all(line.startswith("[") for line in complete_log.splitlines()))
 
     def test_stop_during_step_preserves_completed_steps_and_resumes(self):
         batch = self.create(3)
@@ -419,12 +431,35 @@ class VideoBatchTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             batches.create_batch(payload)
 
-    def test_empty_and_oversized_batches_are_rejected_before_creation(self):
+    def test_empty_batch_is_rejected_before_creation(self):
         payload = self.payload(1)
-        for rows in ([], payload["rows"] * 501):
-            with self.subTest(count=len(rows)), self.assertRaises(ValueError):
-                batches.create_batch({**payload, "rows": rows})
+        with self.assertRaises(ValueError):
+            batches.create_batch({**payload, "rows": []})
         self.assertEqual(list((self.root / "flows").glob("*/flow.json")), [])
+
+    def test_batch_size_follows_materials_without_five_hundred_group_limit(self):
+        # Creating recipes must never start model/media execution; guards in
+        # setUp keep this a local persistence check even for larger batches.
+        batch = self.create(501)
+        self.assertEqual(batch["total"], 501)
+        self.assertEqual(batch["pending"], 501)
+        self.assertEqual(batch["completed"], 0)
+        self.assertEqual(len({row["flowId"] for row in batch["rows"]}), 501)
+        self.assertEqual(self.calls, [])
+
+    def test_persistent_log_tail_is_bounded_and_download_keeps_complete_history(self):
+        batch = self.create(1)
+        self.assertEqual(batch["logUrl"], f"/api/video-batches/{batch['id']}/logs")
+        self.assertEqual(batch["logDownloadUrl"], f"/api/video-batches/{batch['id']}/logs.txt")
+        path = batches.resolve_log(batch["id"])
+        lines = [f"第 {index} 行：" + "离线日志" * 30 for index in range(1050)]
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        self.assertEqual(batches.read_logs(batch["id"]), lines[-1000:])
+        self.assertEqual(batches.resolve_log(batch["id"]).read_text(encoding="utf-8").splitlines(), lines)
+        for lookup in (batches.read_logs, batches.resolve_log):
+            with self.subTest(lookup=lookup.__name__), self.assertRaises(FileNotFoundError):
+                lookup("f" * 16)
+        self.assertFalse((self.root / "batches" / ("f" * 16)).exists())
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import csv
+from datetime import datetime
 import json
 from pathlib import Path
 import re
@@ -25,7 +26,7 @@ BATCH_ROOT = project_root() / "output" / "video_batches"
 _LOCK = threading.RLock()
 _ACTIVE: set[str] = set()
 _ID = re.compile(r"^[a-f0-9]{16}$")
-_ROW_FIELDS = {"name", "videoPath", "referenceImagePath", "startImagePath", "endImagePath", "cutSeconds", "editInstruction"}
+_ROW_FIELDS = {"name", "videoPath", "referenceImagePath", "referenceAlt1Path", "referenceAlt2Path", "startImagePath", "endImagePath", "cutSeconds", "editInstruction"}
 _DEFAULT_FIELDS = _ROW_FIELDS | {"mode", "temporalMode", "spatialTarget", "promptSource", "keepAudio"}
 
 
@@ -115,6 +116,8 @@ def _public(batch: dict[str, Any]) -> dict[str, Any]:
     result.update(result["counts"])
     result["requiresReview"] = any(row.get("requiresReview") for row in result["rows"])
     result["manifestUrl"] = f"/api/video-batches/{result['id']}/manifest.csv"
+    result["logUrl"] = f"/api/video-batches/{result['id']}/logs"
+    result["logDownloadUrl"] = f"/api/video-batches/{result['id']}/logs.txt"
     if result["status"] == "completed" and result["completed"] != result["total"]:
         result["status"] = "ready"
     if result["status"] == "interrupted" and not result["requiresReview"]:
@@ -159,8 +162,8 @@ def create_batch(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("批次配置必须是对象。")
     defaults = payload.get("defaults")
     rows = payload.get("rows")
-    if not isinstance(defaults, dict) or not isinstance(rows, list) or not 1 <= len(rows) <= 500:
-        raise ValueError("请提供流程默认配置和 1 到 500 组素材。")
+    if not isinstance(defaults, dict) or not isinstance(rows, list) or not rows:
+        raise ValueError("请提供流程默认配置和至少一组素材；组数由导入素材决定。")
     if defaults.get("promptSource", "ai") != "ai":
         raise ValueError("批量流程仅支持 AI 自动生成提示词。")
     defaults = {key: value for key, value in defaults.items() if key in _DEFAULT_FIELDS}
@@ -269,14 +272,59 @@ def resolve_manifest(batch_id: str) -> Path:
         return path
 
 
+def resolve_log(batch_id: str) -> Path:
+    with _LOCK:
+        _load(batch_id)
+        path = _directory(batch_id) / "batch.log"
+        path.touch(exist_ok=True)
+        return path
+
+
+def read_logs(batch_id: str) -> list[str]:
+    with _LOCK:
+        path = resolve_log(batch_id)
+        # Read backwards in blocks rather than loading an ever-growing log.
+        with path.open("rb") as handle:
+            handle.seek(0, 2)
+            remaining = handle.tell()
+            chunks: list[bytes] = []
+            line_count = 0
+            while remaining and line_count <= 1000:
+                length = min(65536, remaining)
+                remaining -= length
+                handle.seek(remaining)
+                chunk = handle.read(length)
+                chunks.append(chunk)
+                line_count += chunk.count(b"\n")
+        return b"".join(reversed(chunks)).decode("utf-8", errors="replace").splitlines()[-1000:]
+
+
 def run_batch(*, batch_id: str, job_id: str, log: Callable[[str], None],
               progress: Callable[[int, int], None], update_job: Callable[..., Any]) -> dict[str, Any]:
+    original_log = log
+    log_warning_sent = False
+
+    def log(message: str) -> None:
+        nonlocal log_warning_sent
+        timestamp = datetime.now().astimezone().isoformat(timespec="seconds")
+        lines = "".join(f"[{timestamp}] {line}\n" for line in (str(message).splitlines() or [""]))
+        try:
+            with _LOCK:
+                with (_directory(batch_id) / "batch.log").open("a", encoding="utf-8") as handle:
+                    handle.write(lines)
+        except OSError as exc:
+            if not log_warning_sent:
+                log_warning_sent = True
+                original_log(f"批次日志文件暂时无法保存：{exc}；任务日志仍会继续更新。")
+        original_log(message)
+
     with _LOCK:
         batch = _load(batch_id)
         if batch_id not in _ACTIVE or batch["jobId"] != job_id:
             raise ValueError("请先取得此批次的执行权。")
         selected = list(batch["runRows"])
     try:
+        log(f"开始批次：{batch['name']}；本次任务 {job_id}；待执行 {len(selected)} 组，共 {len(batch['rows'])} 组。")
         for index in selected:
             with _LOCK:
                 batch = _load(batch_id)
@@ -329,6 +377,12 @@ def run_batch(*, batch_id: str, job_id: str, log: Callable[[str], None],
                 batch["currentRow"] = 0
                 _save(batch)
                 counts = _counts(batch)
+            if row["status"] == "completed":
+                log(f"第 {index} 组完成：{(row.get('finalVideo') or {}).get('path', '')}")
+            elif row["status"] == "failed":
+                log(f"第 {index} 组失败：{row['error']}")
+            else:
+                log(f"第 {index} 组中间步骤已保存，可继续执行。")
             progress(counts["completed"] + counts["failed"], counts["total"])
             if batch.get("requiresReview") or batch.get("stopRequested"):
                 break
@@ -368,6 +422,7 @@ def run_batch(*, batch_id: str, job_id: str, log: Callable[[str], None],
     items = [row["finalVideo"] for row in snapshot["rows"] if row.get("finalVideo")]
     failures = [{"row_index": row["index"], "flow_id": row["flowId"], "message": row["error"]}
                 for row in snapshot["rows"] if row["status"] == "failed"]
+    log(f"批次本次执行结束：{snapshot['status']}；已完成 {counts['completed']} 组，失败 {counts['failed']} 组，待执行 {counts['pending']} 组；任务 {job_id}。")
     status = "completed" if snapshot["status"] == "completed" else "partial" if counts["completed"] or snapshot["status"] == "stopped" else "failed"
     return {"status": status, "items": items, "failures": failures, "error": snapshot["error"],
             "total": counts["total"], "progress": counts["completed"] + counts["failed"],

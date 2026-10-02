@@ -79,6 +79,7 @@ from web_demo.backend.app.services.video_clip_service import (  # noqa: E402
 from web_demo.backend.app.services.video_prompt_generator import run_video_generation  # noqa: E402
 from web_demo.backend.app.services import video_flow_service as video_flows  # noqa: E402
 from web_demo.backend.app.services import video_batch_service as video_batches  # noqa: E402
+from web_demo.backend.app.services.video_batch_inputs import match_batch_inputs  # noqa: E402
 from web_demo.backend.app.utils.file_writer import ensure_dir  # noqa: E402
 from web_demo.backend.app.utils.logging_utils import (  # noqa: E402
     get_job_log_path,
@@ -869,6 +870,10 @@ class DemoHandler(BaseHTTPRequestHandler):
                     return json_response(self, HTTPStatus.OK, {"batch": video_batches.get_batch(parts[2])})
                 if len(parts) == 4 and parts[3] == "manifest.csv":
                     return self._serve_flow_file(video_batches.resolve_manifest(parts[2]))
+                if len(parts) == 4 and parts[3] == "logs":
+                    return json_response(self, HTTPStatus.OK, {"logs": video_batches.read_logs(parts[2])})
+                if len(parts) == 4 and parts[3] == "logs.txt":
+                    return self._serve_flow_file(video_batches.resolve_log(parts[2]))
                 return json_response(self, HTTPStatus.NOT_FOUND, {"error": "批量流程接口不存在。"})
             except FileNotFoundError as exc:
                 return json_response(self, HTTPStatus.NOT_FOUND, {"error": str(exc)})
@@ -1021,6 +1026,8 @@ class DemoHandler(BaseHTTPRequestHandler):
                 payload = read_body_json(self)
                 if not isinstance(payload, dict):
                     raise ValueError("请求必须是 JSON 对象。")
+                if len(parts) == 3 and parts[2] == "scan":
+                    return json_response(self, HTTPStatus.OK, match_batch_inputs(payload))
                 if len(parts) == 2:
                     return json_response(self, HTTPStatus.CREATED, {"batch": video_batches.create_batch(payload)})
                 if len(parts) == 4 and parts[3] == "run":

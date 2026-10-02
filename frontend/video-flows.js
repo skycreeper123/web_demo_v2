@@ -114,7 +114,7 @@
   }
   function renderInputs(flow) {
     const inputs = flow.inputs || {};
-    const paths = [["videoPath", "原视频", "video"], ["referenceImagePath", "空间参考图", "image"], ["startImagePath", "新首图", "image"], ["endImagePath", "目标尾图", "image"]];
+    const paths = [["videoPath", "原视频", "video"], ["referenceImagePath", "空间参考图", "image"], ["referenceAlt1Path", "补充参考图 1", "image"], ["referenceAlt2Path", "补充参考图 2", "image"], ["startImagePath", "新首图", "image"], ["endImagePath", "目标尾图", "image"]];
     const artifacts = artifactOutputs(flow);
     const cards = paths.flatMap(([key, name, kind]) => {
       if (!inputs[key]) return [];
