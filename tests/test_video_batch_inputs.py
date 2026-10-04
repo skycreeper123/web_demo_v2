@@ -161,8 +161,9 @@ class VideoBatchInputTests(unittest.TestCase):
                 if mode == "mixed":
                     self.assertFalse(row.get("startImagePath"))
         mixed_suffix = self.scan("mixed", temporal="suffix", videos=["a.mp4"], references=["a.png"])
-        self.assertEqual(mixed_suffix["summary"]["blocked"], 1)
-        self.assertIn("endImagePath", mixed_suffix["requiredRoles"])
+        self.assertEqual(mixed_suffix["summary"]["blocked"], 0)
+        self.assertNotIn("endImagePath", mixed_suffix["requiredRoles"])
+        self.assertNotIn("endImagePath", mixed_suffix["rows"][0])
 
     def test_explicit_start_and_end_roles_take_precedence_over_temporal_references(self):
         for mode, role, field in (("prefix", "startImages", "startImagePath"),
@@ -185,7 +186,42 @@ class VideoBatchInputTests(unittest.TestCase):
                 flow = flows.build_flow({"mode": "prefix", "cutSeconds": 2, **result["rows"][0]})
                 self.assertIn("first_render", [step["id"] for step in flow["steps"]])
         suffix = self.scan("suffix", videos=["a.mp4"], references=["a_1.png", "a_2.png"])
-        self.assertEqual(suffix["summary"]["blocked"], 1)
+        self.assertEqual(suffix["summary"]["blocked"], 0)
+        self.assertNotIn("endImagePath", suffix["matches"][0]["assets"])
+
+    def test_suffix_video_only_folders_create_batch_without_target_images(self):
+        defaults = {"mode": "suffix", "promptSource": "ai", "cutMode": "percent", "replacePercent": 30}
+        videos = self.metadata("videos", ["a.mp4", "b.mp4"], paths=True)
+        for mode in ("files", "directories"):
+            with self.subTest(input_mode=mode):
+                result = inputs.match_batch_inputs({
+                    "defaults": defaults, "inputMode": mode, "files": {"videos": videos},
+                    "directories": {"videos": str(self.root / "videos")},
+                })
+                self.assertEqual(result["summary"]["ready"], 2)
+                self.assertEqual(result["requiredRoles"], ["videoPath"])
+                batch = batches.create_batch({"defaults": defaults, "rows": result["rows"]})
+                for row in batch["rows"]:
+                    flow = flows.get_flow(row["flowId"])
+                    self.assertEqual(flow["inputs"]["endImagePath"], "")
+                    self.assertNotIn("target_end", flow["artifacts"])
+                    motion = next(step for step in flow["steps"] if step["id"] == "motion_prompt")
+                    self.assertEqual(motion["settings"]["media"], ["boundary_frame", "target_end"])
+
+    def test_missing_per_video_tail_falls_back_to_auto_without_losing_other_manual_tails(self):
+        for mode in ("suffix", "mixed"):
+            with self.subTest(mode=mode):
+                defaults = {"mode": mode, "temporalMode": "suffix", "promptSource": "ai", "cutSeconds": 2}
+                result = self.scan(mode, temporal="suffix", paths=True, videos=["a.mp4", "b.mp4"],
+                                   references=["a.png", "b.png"] if mode == "mixed" else [],
+                                   endImages=["a.jpg"])
+                self.assertEqual(result["summary"]["ready"], 2)
+                self.assertEqual(result["rows"][0]["endImagePath"], str(self.root / "endImages" / "a.jpg"))
+                self.assertNotIn("endImagePath", result["rows"][1])
+                batch = batches.create_batch({"defaults": defaults, "rows": result["rows"]})
+                manual, automatic = [flows.get_flow(row["flowId"]) for row in batch["rows"]]
+                self.assertEqual(manual["artifacts"]["target_end"]["path"], str(self.root / "endImages" / "a.jpg"))
+                self.assertNotIn("target_end", automatic["artifacts"])
 
     def test_mixed_suffix_keeps_spatial_refs_separate_and_can_inherit_default_end(self):
         end = self.file("defaults", "shared-end.png")

@@ -61,7 +61,9 @@
     $("flowTemporalField").hidden = mode !== "mixed";
     $("flowStartField").hidden = !timed || temporal !== "prefix";
     $("flowEndField").hidden = !timed || temporal !== "suffix";
-    $("flowEndPath").required = timed && temporal === "suffix" && !batch;
+    $("flowEndPath").required = false;
+    $("flowEndPath").placeholder = mode === "mixed" ? "留空自动取空间处理后末帧；填写图片路径可覆盖" : "留空自动取原片末帧；填写图片路径可覆盖";
+    $("flowEndHint").textContent = mode === "mixed" ? "默认自动取空间处理后视频的最后一帧，保持处理后的结束画面；手工尾图优先覆盖。" : "默认自动取原视频最后一帧，保持结束画面；无需额外准备尾图。手工尾图优先覆盖。";
     $("flowCutField").hidden = !timed;
     $("flowCutMode").disabled = !timed;
     $("flowPercentField").hidden = !timed || !percent;
@@ -80,6 +82,7 @@
     if (timed) {
       sequence.push(percent ? "按比例拆分与取帧" : "按切点拆分与取帧");
       if (temporal === "prefix") sequence.push($("flowStartPath").value.trim() ? "使用新首图" : "生成新首图");
+      if (temporal === "suffix") sequence.push(batch ? "指定尾图或自动取末帧" : $("flowEndPath").value.trim() ? "使用指定尾图" : mode === "mixed" ? "提取空间处理后末帧" : "提取原视频末帧");
       sequence.push("首尾双图生成", temporal === "prefix" ? "接回保留后段" : "接回保留前段");
     }
     $("flowRecipe").innerHTML = sequence.map((label, index) => `<span><b>${index + 1}</b>${html(label)}</span>`).join('<i aria-hidden="true">→</i>');
@@ -417,6 +420,7 @@
   $("flowCreateForm").addEventListener("submit", createFlow);
   ["flowInputMode", "flowMode", "flowTemporalMode", "flowSpatialTarget", "flowPromptSource", "flowCutMode"].forEach(id => $(id).addEventListener("change", updateCreateFields));
   $("flowStartPath").addEventListener("input", updateCreateFields);
+  $("flowEndPath").addEventListener("input", updateCreateFields);
   document.querySelectorAll("[data-flow-upload]").forEach(input => input.addEventListener("change", () => upload(input)));
   ["flowVideoPath", "flowReferencePath", "flowStartPath", "flowEndPath"].forEach(id => $(id).addEventListener("input", () => {
     const old = flowState.previews.get(id);

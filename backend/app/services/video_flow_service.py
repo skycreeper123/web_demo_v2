@@ -198,7 +198,7 @@ def build_flow(payload: dict[str, Any]) -> dict[str, Any]:
         "referenceAlt1Path": _input_path(payload.get("referenceAlt1Path"), "补充参考图 1", _IMAGE_SUFFIXES, False),
         "referenceAlt2Path": _input_path(payload.get("referenceAlt2Path"), "补充参考图 2", _IMAGE_SUFFIXES, False),
         "startImagePath": _input_path(payload.get("startImagePath"), "新首图", _IMAGE_SUFFIXES, False),
-        "endImagePath": _input_path(payload.get("endImagePath"), "目标尾图", _IMAGE_SUFFIXES, is_temporal and temporal == "suffix"),
+        "endImagePath": _input_path(payload.get("endImagePath"), "目标尾图", _IMAGE_SUFFIXES, False),
         "spatialTarget": spatial_target, "temporalMode": temporal, "cutMode": cut_mode,
         "replacePercent": percent, "cutSeconds": cut,
         "editInstruction": str(payload.get("editInstruction") or "").strip()[:12000],
@@ -591,9 +591,18 @@ def _execute_step(flow: dict[str, Any], step: dict[str, Any], job_id: str,
             finalize_spatial(source, _path(flow, "source_video"), normalized, keep_audio=False)
             source = normalized
             extra_outputs.append(_artifact("spatial_normalized", normalized, flow["id"]))
-        media = prepare_temporal(source, directory, inputs["temporalMode"], inputs["cutSeconds"])
-        flow["media"] = {key: value for key, value in media.items() if key not in {"retained_video", "boundary_frame", "original_first_frame"}}
-        return extra_outputs + [_artifact(key, media[key], flow["id"]) for key in ("retained_video", "boundary_frame", "original_first_frame")]
+        auto_end = inputs["temporalMode"] == "suffix" and not inputs["endImagePath"]
+        options = {"extract_target_end": True} if auto_end else {}
+        media = prepare_temporal(source, directory, inputs["temporalMode"], inputs["cutSeconds"], **options)
+        media_keys = ["retained_video", "boundary_frame", "original_first_frame"]
+        if auto_end:
+            media_keys.append("target_end")
+            label = "空间替换后的视频" if step["settings"]["sourceKey"] == "spatial_video" else "原视频"
+            log(f"未提供目标尾图，已从{label}提取最后一帧，与保留前段的衔接帧分别作为尾图和首图。")
+        # Only an extracted end frame belongs to this step. A supplied end
+        # image stays an input artifact and survives prepare invalidation.
+        flow["media"] = {key: value for key, value in media.items() if key not in media_keys}
+        return extra_outputs + [_artifact(key, media[key], flow["id"]) for key in media_keys]
     output = directory / "final.mp4"
     if step["id"] == "finish":
         finalize_spatial(_path(flow, "spatial_video"), _path(flow, "source_video"), output, keep_audio=inputs["keepAudio"])

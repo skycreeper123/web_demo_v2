@@ -73,7 +73,6 @@
     return {headers, rows};
   }
   function validateRows(parsed, defaults) {
-    const temporal = defaults.mode === "mixed" ? defaults.temporalMode : defaults.mode;
     return parsed.rows.map(row => {
       const effective = {...defaults};
       for (const [key, value] of Object.entries(row.values)) if (value !== "") effective[key] = value;
@@ -81,7 +80,6 @@
       const errors = [];
       if (!effective.videoPath) errors.push("缺少原视频路径（本行或统一素材）");
       if (["spatial", "mixed"].includes(defaults.mode) && !effective.referenceImagePath) errors.push("缺少参考图（本行或统一素材）");
-      if (temporal === "suffix" && !effective.endImagePath) errors.push("缺少目标尾图（本行或统一素材）");
       const timingError = validateTiming(effective);
       if (timingError) errors.push(timingError);
       return {...row, effective, errors};
@@ -131,7 +129,7 @@
     $("flowPromptSource").disabled = batch || state.preparing;
     $("flowVideoField").querySelector("label > span").textContent = batch ? "统一原视频（可选）" : "原视频 *";
     $("flowReferenceField").querySelector("label > span").textContent = batch ? "统一参考图（可选）" : "空间替换参考图 *";
-    $("flowEndField").querySelector("label > span").textContent = batch ? "统一目标尾图（可选）" : "目标尾图 *";
+    $("flowEndField").querySelector("label > span").textContent = batch ? "统一尾图覆盖（可选）" : "尾图覆盖（可选）";
     $("batchImportPanel").hidden = !batch;
     $("batchDefaultsHint").hidden = !batch;
     $("flowCreateTitle").textContent = batch ? "创建视频批次" : "创建视频流程";
@@ -154,8 +152,8 @@
     const spatial = ["spatial", "mixed"].includes(defaults.mode);
     $("batchDirectoryPanel").hidden = source === "csv";
     $("batchCsvPanel").hidden = source !== "csv";
-    const titles = {videos: "原视频目录 *", references: spatial ? "空间替换参考图目录" : temporal === "suffix" ? "目标尾图目录" : "新首图目录（可选）", startImages: "优先使用的新首图目录（可选）", endImages: defaults.mode === "mixed" ? "目标尾图目录 *" : "优先使用的目标尾图目录（可选）"};
-    $("batchRoleHint").textContent = spatial ? `原视频与空间参考图同名配对${temporal === "suffix" ? "，混合替换后段还需单独的目标尾图目录（或共用尾图）" : defaults.mode === "mixed" ? "；新首图可另选目录，缺省时自动生成" : ""}。` : temporal === "suffix" ? "同名图片作为目标尾图。可额外指定优先使用的尾图目录，缺省时使用共用尾图。" : "同名图片作为可选新首图。可额外指定优先使用的新首图目录；未提供时由 Qwen 根据原首帧生成。";
+    const titles = {videos: "原视频目录 *", references: spatial ? "空间替换参考图目录" : temporal === "suffix" ? "尾图覆盖目录（可选）" : "新首图目录（可选）", startImages: "优先使用的新首图目录（可选）", endImages: "优先尾图覆盖目录（可选）"};
+    $("batchRoleHint").textContent = spatial ? `原视频与空间参考图同名配对${temporal === "suffix" ? "；后段默认自动取空间处理后的末帧，保持处理后的结束画面。尾图目录或共用尾图仅用于手工覆盖，无需额外准备" : defaults.mode === "mixed" ? "；新首图可另选目录，缺省时自动生成" : ""}。` : temporal === "suffix" ? "只需视频目录即可替换后段，默认自动取原片末帧并保持结束画面。若需覆盖尾图，依次优先使用：优先尾图目录、同名尾图覆盖目录、共用尾图；全部留空则自动取帧。" : "同名图片作为可选新首图。可额外指定优先使用的新首图目录；未提供时由 Qwen 根据原首帧生成。";
     for (const role of roles) {
       $(`batchRole-${role}`).hidden = !activeRoles(defaults).includes(role);
       $(`batchRoleTitle-${role}`).textContent = titles[role];
@@ -233,7 +231,9 @@
     $("batchScanErrors").textContent = blocked.slice(0, 20).map(match => `${match.row?.name || match.matchKey || `第 ${match.index} 组`}：${(match.issues || []).map(issueText).join("；") || "素材不能创建"}`).join("\n") + (blocked.length > 20 ? `\n另有 ${blocked.length - 20} 组待修正，展开全部匹配可查看。` : "");
     $("batchScanPreview").hidden = !matches.length;
     const shown = state.expandMatches ? matches : matches.slice(0, 200);
-    $("batchScanPreview").innerHTML = `<table class="batch-table"><caption>${matches.length > shown.length ? `预览前 ${shown.length} 组，共 ${matches.length} 组；生成包含全部组。` : `共 ${matches.length} 组。`}图片匹配及必需项以所选流程为准。</caption><thead><tr><th scope="col">组</th><th scope="col">原视频</th><th scope="col">匹配图片</th><th scope="col">检查</th></tr></thead><tbody>${shown.map(match => `<tr class="${match.canCreate ? "" : "batch-row-error"}"><th scope="row">${html(match.row?.name || match.matchKey || match.index)}</th><td>${html(match.assets?.videoPath?.relativePath || match.assets?.videoPath?.name || match.row?.videoPath || "—")}</td><td>${assetFields.filter(field => field !== "videoPath" && match.assets?.[field]).map(field => `<small>${html(labels[field])}</small>${html(match.assets[field].relativePath || match.assets[field].name || match.assets[field].path)}`).join("<br>") || "无需图片 / 自动生成新首图"}</td><td>${match.canCreate ? "匹配成功" : (match.issues || []).map(issue => html(issueText(issue))).join("<br>") || "素材不能创建"}</td></tr>`).join("")}</tbody></table>`;
+    const defaults = flowUI.getDefaults(), temporal = defaults.mode === "mixed" ? defaults.temporalMode : defaults.mode;
+    const imageFallback = temporal === "suffix" ? "自动取视频末帧作为尾图" : "无需图片 / 自动生成新首图";
+    $("batchScanPreview").innerHTML = `<table class="batch-table"><caption>${matches.length > shown.length ? `预览前 ${shown.length} 组，共 ${matches.length} 组；生成包含全部组。` : `共 ${matches.length} 组。`}图片匹配及必需项以所选流程为准。</caption><thead><tr><th scope="col">组</th><th scope="col">原视频</th><th scope="col">匹配图片</th><th scope="col">检查</th></tr></thead><tbody>${shown.map(match => `<tr class="${match.canCreate ? "" : "batch-row-error"}"><th scope="row">${html(match.row?.name || match.matchKey || match.index)}</th><td>${html(match.assets?.videoPath?.relativePath || match.assets?.videoPath?.name || match.row?.videoPath || "—")}</td><td>${assetFields.filter(field => field !== "videoPath" && match.assets?.[field]).map(field => `<small>${html(labels[field])}</small>${html(match.assets[field].relativePath || match.assets[field].name || match.assets[field].path)}`).join("<br>") || imageFallback}</td><td>${match.canCreate ? "匹配成功" : (match.issues || []).map(issue => html(issueText(issue))).join("<br>") || "素材不能创建"}</td></tr>`).join("")}</tbody></table>`;
     $("batchExpandMatchesBtn").hidden = matches.length <= 200;
     $("batchExpandMatchesBtn").textContent = state.expandMatches ? "收起匹配预览" : `展开全部 ${matches.length} 组匹配`;
   }
@@ -330,9 +330,8 @@
   }
   function templateDownload() {
     const defaults = flowUI.getDefaults();
-    const temporal = defaults.mode === "mixed" ? defaults.temporalMode : defaults.mode;
     const timed = defaults.mode !== "spatial", cutMode = defaults.cutMode || "seconds";
-    const example = {name: "素材 001", videoPath: "/data/videos/001.mp4", referenceImagePath: ["spatial", "mixed"].includes(defaults.mode) ? "/data/references/001.png" : "", startImagePath: "", endImagePath: temporal === "suffix" ? "/data/end_frames/001.png" : "", cutMode: timed ? cutMode : "", replacePercent: timed && cutMode === "percent" ? defaults.replacePercent ?? 30 : "", cutSeconds: timed && cutMode === "seconds" ? defaults.cutSeconds ?? 3 : "", editInstruction: ""};
+    const example = {name: "素材 001", videoPath: "/data/videos/001.mp4", referenceImagePath: ["spatial", "mixed"].includes(defaults.mode) ? "/data/references/001.png" : "", startImagePath: "", endImagePath: "", cutMode: timed ? cutMode : "", replacePercent: timed && cutMode === "percent" ? defaults.replacePercent ?? 30 : "", cutSeconds: timed && cutMode === "seconds" ? defaults.cutSeconds ?? 3 : "", editInstruction: ""};
     const escape = value => `"${String(value ?? "").replace(/"/g, '""')}"`;
     const content = "\uFEFF" + columns.join(",") + "\r\n" + columns.map(key => escape(example[key])).join(",") + "\r\n";
     const url = URL.createObjectURL(new Blob([content], {type: "text/csv;charset=utf-8"}));

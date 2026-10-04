@@ -667,6 +667,8 @@ CSV 行优先字段：
 
 Comfy 新增 `start_image_ref / end_image_ref`，分别来自表单或 CSV 的 `start_image_path / end_image_path`；文件投递为各自的 `start.ext / end.ext`。Qwen 正负提示词按 conditioning 上游关系推断，避免把正向文字填入负向分支。
 
+后段替换的 `endImagePath` 为可选输入。未提供时，`prepare` 在提取保留前段的末帧 `boundary_frame` 之外，另从完整源视频提取最后一帧，登记为该步骤输出 `target_end`；混合模式的完整源视频为已归一化的空间处理结果。后续 Prompt 与 Comfy 仍按 `boundary_frame → target_end` 使用双图，结束画面默认为原片或空间处理后的结尾。手动尾图始终优先，作为输入素材保留，不作为 `prepare` 输出；因此重跑准备步骤会作废并重取自动尾图，但不会删除手动尾图引用。
+
 V5 的前后景选择映射为 RMBG `invert_output`，新流程关闭 77 帧加载上限。I2V 使用 16fps，帧数向上选择 `4n+1`；成片阶段将生成段时长匹配待替换区间。固定 V5 模板先将源画面非等比缩放成方形，因此空间结果通过直接缩放到原片宽高反向还原；时间替换的生成片段仍使用等比缩放补边。混合任务先将空间结果匹配原片时间轴，再进行裁切。新媒体路径统一原片帧率和尺寸，可映射原片音轨；不改动旧剪辑工作台预设。
 
 媒体导出将 OpenCV 读取的帧率还原为有理数，滤镜 `fps`、编码 `-r:v` 与 `-enc_time_base:v` 使用同一帧率，显式指定 `-fps_mode:v cfr`；MP4 轨道 timescale 取帧率分子的整数倍，确保每帧对应整数 ticks。保留 `30000/1001`、`1197/40` 等速率；可变帧率素材按已读取的平均帧率归一为恒定帧率。若旧版系统 FFmpeg 在开始编码前明确拒绝 `fps_mode` 选项，则仅将该选项替换为 `-vsync cfr` 重试；其他编码错误直接报告。参数语义参见 [FFmpeg 编码与帧率选项](https://ffmpeg.org/ffmpeg.html#Advanced-options) 和 [MP4 timescale](https://ffmpeg.org/ffmpeg-formats.html)。
@@ -698,7 +700,7 @@ V5 的前后景选择映射为 RMBG `invert_output`，新流程关闭 77 帧加�
 
 ### 12.4 批量流程
 
-`video_batch_inputs.py` 提供服务器目录递归扫描及浏览器文件元数据匹配，沿用视频与主参考图同名、`_1 / _2` 为补充图的规则。支持输入 `{defaults, inputMode, directories, files}`：目录和文件角色均为 `videos / references / startImages / endImages`。返回匹配条目、素材角色、问题及待创建的 `rows`；浏览器素材缺少服务器路径时标记需要上传。重复候选不静默选择。纯时间模式将参考目录解释为新首图或目标尾图；混合模式的参考目录始终服务空间替换，时间目标走独立目录。
+`video_batch_inputs.py` 提供服务器目录递归扫描及浏览器文件元数据匹配，沿用视频与主参考图同名、`_1 / _2` 为补充图的规则。支持输入 `{defaults, inputMode, directories, files}`：目录和文件角色均为 `videos / references / startImages / endImages`。返回匹配条目、素材角色、问题及待创建的 `rows`；浏览器素材缺少服务器路径时标记需要上传。重复候选不静默选择。纯时间模式将参考目录解释为可选的新首图或目标尾图；混合模式的参考目录始终服务空间替换，时间目标走独立目录。`endImagePath` 不再列为必需素材，未匹配到尾图且无共用尾图的组在执行时自动取末帧；同一批可混用手动尾图与自动取帧，已提供但重名冲突的素材仍报错。
 
 `video_batch_service.py` 管理同一配方的多组素材，`video-batches.js` 提供文件夹匹配、一键执行、高级 CSV、批次历史、行状态与成片入口。创建参数为 `{name, defaults, rows}`，`defaults` 复用单流程配置，`rows` 仅覆盖名称、素材、时间范围和编辑需求；所有行统一模式、方向、空间范围与自动 Prompt 来源。时间范围支持 `cutMode / replacePercent / cutSeconds`，行内显式 `cutMode` 优先；无显式模式时，非空 `replacePercent` 推断为按比例，否则非空 `cutSeconds` 推断为按秒，其余继承默认配置。每组按各自原视频的时长解析比例。要求至少一组，不人为限定总组数，先验证全体行，再保存批次和子流程。前端的一键执行依次调用扫描、必要的上传、创建和启动；扫描有阻塞项时整批不启动，创建成功但启动失败的批次仍可从历史恢复。
 

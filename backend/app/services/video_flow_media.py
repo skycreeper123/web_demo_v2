@@ -177,14 +177,17 @@ def prepare_temporal(
     output_dir: Path,
     direction: str,
     cut_seconds: float,
+    *,
+    extract_target_end: bool = False,
 ) -> dict[str, Any]:
-    """Retain the untouched temporal segment and export its join boundary."""
+    """Export the retained segment, its boundary, and an optional source end."""
     source = _source_file(source)
     meta = probe_video(source)
     cut, retained_duration, replacement_duration = _timeline(meta, direction, cut_seconds)
     retained = _task_output(output_dir, "retained.mp4")
     boundary = _task_output(output_dir, "boundary.png")
     original_first = _task_output(output_dir, "original_first.png")
+    target_end = _task_output(output_dir, "target_end.png") if extract_target_end else None
     if source in {retained, boundary, original_first}:
         raise ValueError("任务输出不能覆盖原视频。")
     temporary = _temporary_path(retained)
@@ -201,6 +204,9 @@ def prepare_temporal(
         temporary.replace(retained)
         _extract_frame(source, original_first, last=False, duration=float(meta["duration"]))
         _extract_frame(retained, boundary, last=direction == "suffix", duration=float(retained_meta["duration"]))
+        if target_end is not None:
+            # Use the full source ending, not the retained segment's boundary.
+            _extract_frame(source, target_end, last=True, duration=float(meta["duration"]))
     finally:
         temporary.unlink(missing_ok=True)
     return {
@@ -208,6 +214,7 @@ def prepare_temporal(
         "retained_video": str(retained),
         "boundary_frame": str(boundary),
         "original_first_frame": str(original_first),
+        **({"target_end": str(target_end)} if target_end is not None else {}),
         "replacement_duration": replacement_duration,
         "retained_duration": retained_duration,
         "cut_seconds": cut,

@@ -390,3 +390,112 @@ test("polling refreshes the resolved percentage cut without clearing prompt draf
   assert.match(h.$("flowInputSummary").innerHTML, /已解析切点：7 秒/);
   assert.equal(h.flowApi.flowState.drafts.get("percent-flow:motion_prompt").prompt, "unsaved text");
 });
+
+for (const mode of ["suffix", "mixed"]) test(`${mode} single flow accepts an empty end image and preserves manual overrides`, async () => {
+  const h = harness(({url, body}) => {
+    assert.equal(url, "/api/video-flows");
+    return {flow: {id: "tail-optional", mode: body.mode, status: "draft", inputs: body, steps: []}};
+  }, {realFlows: true});
+  h.$("flowInputMode").value = "single"; h.$("flowMode").value = mode; h.$("flowTemporalMode").value = "suffix";
+  h.$("flowVideoPath").value = "/videos/a.mp4";
+  h.$("flowReferencePath").value = mode === "mixed" ? "/images/a.png" : "";
+  h.flowApi.updateCreateFields();
+  assert.equal(h.$("flowEndPath").required, false);
+  assert.equal(h.$("flowReferencePath").required, mode === "mixed");
+  assert.match(h.$("flowRecipe").innerHTML, mode === "mixed" ? /提取空间处理后末帧/ : /提取原视频末帧/);
+  await h.flowApi.createFlow({preventDefault() {}});
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.calls[0].body.endImagePath, "");
+  h.$("flowEndPath").value = "/manual/last.png";
+  h.flowApi.updateCreateFields();
+  assert.match(h.$("flowRecipe").innerHTML, /使用指定尾图/);
+  await h.flowApi.createFlow({preventDefault() {}});
+  assert.equal(h.calls[1].body.endImagePath, "/manual/last.png");
+});
+
+for (const mode of ["suffix", "mixed"]) test(`${mode} directory batch starts without an end-image directory`, async () => {
+  const h = harness(({url, body}) => {
+    if (url.endsWith("/scan")) {
+      assert.equal(body.directories.endImages, "");
+      assert.equal(body.defaults.endImagePath, "");
+      assert.equal(body.directories.references, mode === "mixed" ? "/data/references" : "");
+      const scan = scanResult(1);
+      if (mode === "suffix") delete scan.matches[0].assets.referenceImagePath;
+      return scan;
+    }
+    if (url === "/api/video-batches") {
+      assert.equal(body.rows[0].endImagePath, undefined);
+      assert.equal(body.rows[0].referenceImagePath, mode === "mixed" ? "/images/1.png" : undefined);
+      return {batch: batch("draft", 1)};
+    }
+    if (url.endsWith("/run")) return {batch: batch("running", 1)};
+    throw new Error(`Unexpected request: ${url}`);
+  }, {realFlows: true});
+  h.$("flowMode").value = mode; h.$("flowTemporalMode").value = "suffix";
+  if (mode === "suffix") h.$("batchDir-references").value = "";
+  h.flowApi.updateCreateFields();
+  assert.equal(h.$("flowEndPath").required, false);
+  assert.match(h.$("batchRoleTitle-endImages").textContent, /可选/);
+  assert.match(h.$("batchRoleHint").textContent, /自动取/);
+  await h.submit();
+  assert.equal(h.api.state.batch.status, "running");
+  if (mode === "suffix") assert.match(h.$("batchScanPreview").innerHTML, /自动取视频末帧/);
+});
+
+test("CSV end images are optional while spatial references remain required", async () => {
+  const h = harness(({url, body}) => {
+    if (url === "/api/video-batches") {
+      assert.deepEqual(body.rows, [{videoPath: "/a.mp4"}, {videoPath: "/b.mp4", endImagePath: "/manual/end.png"}]);
+      return {batch: batch()};
+    }
+    if (url.endsWith("/run")) return {batch: batch("running")};
+    throw new Error(`Unexpected request: ${url}`);
+  });
+  Object.assign(h.defaults, {mode: "suffix", cutMode: "percent", replacePercent: 30});
+  const parsed = h.api.parseCsv("videoPath,endImagePath\n/a.mp4,\n/b.mp4,/manual/end.png");
+  assert.deepEqual(plain(h.api.validateRows(parsed, h.defaults).map(row => row.errors)), [[], []]);
+  const mixed = {...h.defaults, mode: "mixed", temporalMode: "suffix", referenceImagePath: "/ref.png"};
+  assert.deepEqual(plain(h.api.validateRows(parsed, mixed).map(row => row.errors)), [[], []]);
+  assert.match(h.api.validateRows(parsed, {...mixed, referenceImagePath: ""})[0].errors.join(), /缺少参考图/);
+  h.$("batchMaterialSource").value = "csv";
+  h.$("batchCsvText").value = "videoPath,endImagePath\n/a.mp4,\n/b.mp4,/manual/end.png";
+  await h.submit();
+  assert.equal(h.api.state.batch.status, "running");
+});
+
+test("matched explicit browser end images override common defaults in created rows", async () => {
+  const h = harness(({url, body}, {api}) => {
+    if (url.endsWith("/scan")) {
+      assert.equal(body.defaults.endImagePath, "/shared/end.png");
+      assert.equal(body.files.endImages.length, 1);
+      const scan = scanResult(1);
+      scan.matches[0].assets = {videoPath: api.state.files.videos[0], endImagePath: api.state.files.endImages[0]};
+      return scan;
+    }
+    if (url === "/api/comfy/upload") return {path: `/uploaded/${body.name}`};
+    if (url === "/api/video-batches") {
+      assert.equal(body.rows[0].endImagePath, "/uploaded/a.png");
+      assert.equal(body.defaults.endImagePath, "/shared/end.png");
+      return {batch: batch("draft", 1)};
+    }
+    if (url.endsWith("/run")) return {batch: batch("running", 1)};
+    throw new Error(`Unexpected request: ${url}`);
+  }, {realFlows: true});
+  h.$("flowMode").value = "suffix"; h.$("flowEndPath").value = "/shared/end.png";
+  h.$("batchMaterialSource").value = "files";
+  h.api.chooseFiles("videos", [{name: "a.mp4", size: 1}]);
+  h.api.chooseFiles("endImages", [{name: "a.png", size: 1}]);
+  h.flowApi.updateCreateFields();
+  await h.submit();
+  assert.equal(h.api.state.batch.status, "running");
+});
+
+test("suffix CSV template leaves end images empty for automatic extraction", async () => {
+  const h = harness(() => { throw new Error("No request expected"); });
+  Object.assign(h.defaults, {mode: "suffix", cutMode: "percent", replacePercent: 30});
+  h.api.templateDownload();
+  const row = h.api.parseCsv(await h.downloads[0].text()).rows[0].values;
+  assert.equal(row.endImagePath, "");
+  assert.equal(row.referenceImagePath, "");
+  assert.deepEqual(plain(h.api.validateRows({rows: [{values: row}]}, h.defaults)[0].errors), []);
+});

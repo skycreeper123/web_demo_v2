@@ -107,7 +107,7 @@ def match_batch_inputs(payload: dict[str, Any]) -> dict[str, Any]:
     videos = groups["videos"]
     matches_by_role = {role: _match_group(videos, groups[role]) for role in _GROUPS if role != "videos"}
     spatial = recipe in {"spatial", "mixed"}
-    required = ["videoPath"] + (["referenceImagePath"] if spatial else []) + (["endImagePath"] if direction == "suffix" else [])
+    required = ["videoPath"] + (["referenceImagePath"] if spatial else [])
     same_stem: dict[str, list[dict[str, str]]] = defaultdict(list)
     for video in videos:
         same_stem[Path(video["name"]).stem.casefold()].append(video)

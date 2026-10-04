@@ -151,10 +151,85 @@ class FlowTests(unittest.TestCase):
         self.assertIn("保留原视频的前景主体", instruction)
 
     def test_missing_required_images_and_invalid_cut_are_rejected(self):
-        for overrides in ({"referenceImagePath": ""}, {"mode": "suffix", "endImagePath": ""},
+        for overrides in ({"referenceImagePath": ""}, {"mode": "suffix", "endImagePath": str(self.root / "missing.png")},
                           {"mode": "prefix", "cutSeconds": float("nan")}):
             with self.subTest(overrides=overrides), self.assertRaises(ValueError):
                 self.create(**overrides)
+
+    def fake_prepare(self, source, directory, direction, cut, *, extract_target_end=False):
+        result = {"duration": 10, "fps": 30, "replacement_duration": cut if direction == "prefix" else 10 - cut}
+        keys = ["retained_video", "boundary_frame", "original_first_frame"]
+        if extract_target_end:
+            keys.append("target_end")
+        for key in keys:
+            path = directory / (key + (".mp4" if key == "retained_video" else ".png"))
+            path.write_bytes(key.encode())
+            result[key] = str(path)
+        return result
+
+    def test_suffix_without_target_uses_separate_source_end_in_prompt_and_comfy(self):
+        flow = self.create("suffix", endImagePath="")
+        self.assertNotIn("target_end", flow["artifacts"])
+        prepare_step = flows._step(flow, "prepare")
+        prepare_step["attempts"] = 1
+        with patch.object(flows, "prepare_temporal", side_effect=self.fake_prepare) as prepare:
+            outputs = flows._execute_step(flow, prepare_step, "offline", lambda _: None, lambda **_: None)
+        self.assertEqual(prepare.call_args.args[0], Path(self.media["videoPath"]))
+        self.assertTrue(prepare.call_args.kwargs["extract_target_end"])
+        flow["artifacts"].update({item["key"]: item for item in outputs})
+        self.assertNotEqual(flow["artifacts"]["boundary_frame"]["path"], flow["artifacts"]["target_end"]["path"])
+        self.assertNotIn("target_end", flow["media"])
+        self.assertEqual(flows._step(flow, "motion_prompt")["settings"]["media"], ["boundary_frame", "target_end"])
+        with patch.object(flows, "load_comfy_config", return_value={"workflow_manifest_dir": str(ROOT / "workflow")}), \
+             patch.object(flows, "run_comfy_job", return_value={"status": "completed", "items": [{"path": self.media["videoPath"]}]}) as comfy:
+            flows._run_comfy(flow, flows._step(flow, "motion_render"), self.root, "offline", lambda _: None, lambda **_: None)
+        form = comfy.call_args.kwargs["payload"]["formInputs"]
+        self.assertEqual(form["start_image_ref"], flow["artifacts"]["boundary_frame"]["path"])
+        self.assertEqual(form["end_image_ref"], flow["artifacts"]["target_end"]["path"])
+
+    def test_prepare_rerun_invalidates_auto_end_but_preserves_supplied_end(self):
+        for supplied in (False, True):
+            with self.subTest(supplied=supplied):
+                flow = self.create("suffix", endImagePath=self.media["endImagePath"] if supplied else "")
+                step = flows._step(flow, "prepare")
+                step["attempts"] = 1
+                with patch.object(flows, "prepare_temporal", side_effect=self.fake_prepare) as prepare:
+                    outputs = flows._execute_step(flow, step, "offline", lambda _: None, lambda **_: None)
+                self.assertEqual(bool(prepare.call_args.kwargs.get("extract_target_end")), not supplied)
+                step.update(status="completed", outputs=outputs)
+                flow["artifacts"].update({item["key"]: item for item in outputs})
+                flows._save(flow)
+                # Redoing a later step must keep its prepared input frames.
+                flows._invalidate(flow, 1)
+                self.assertIn("target_end", flow["artifacts"])
+                flows._save(flow)
+                claimed = flows.claim_run(flow["id"], "prepare-again", "prepare")
+                self.assertEqual("target_end" in claimed["artifacts"], supplied)
+                if supplied:
+                    self.assertEqual(claimed["artifacts"]["target_end"]["path"], self.media["endImagePath"])
+                else:
+                    self.assertNotIn("target_end", claimed["artifacts"])
+                flows._ACTIVE.discard(flow["id"])
+
+    def test_mixed_suffix_extracts_target_from_normalized_spatial_video(self):
+        flow = self.create("mixed", temporalMode="suffix", endImagePath="")
+        spatial = self.root / "edited_spatial.mp4"
+        spatial.write_bytes(b"offline spatial placeholder")
+        flow["artifacts"]["spatial_video"] = flows._artifact("spatial_video", spatial, flow["id"])
+        step = flows._step(flow, "prepare")
+        step["attempts"] = 1
+
+        def normalize(generated, source, output, **kwargs):
+            output.write_bytes(b"offline normalized placeholder")
+
+        with patch.object(flows, "finalize_spatial", side_effect=normalize) as finalize, \
+             patch.object(flows, "prepare_temporal", side_effect=self.fake_prepare) as prepare:
+            outputs = flows._execute_step(flow, step, "offline", lambda _: None, lambda **_: None)
+        self.assertEqual(finalize.call_args.args[:2], (spatial, Path(self.media["videoPath"])))
+        self.assertEqual(prepare.call_args.args[0], finalize.call_args.args[2])
+        self.assertEqual(prepare.call_args.args[0].name, "spatial_normalized.mp4")
+        self.assertTrue(prepare.call_args.kwargs["extract_target_end"])
+        self.assertIn("target_end", {item["key"] for item in outputs})
 
     def test_out_of_bounds_cut_does_not_submit_any_stage(self):
         flow = self.create("mixed", cutSeconds=40)

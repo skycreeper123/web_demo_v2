@@ -217,6 +217,31 @@ class VideoFlowMediaTests(unittest.TestCase):
         self.mock_execute.assert_not_called()
         self.assertFalse((self.root / "prepare").exists())
 
+    def test_optional_suffix_target_is_last_frame_of_full_source_not_retained_boundary(self):
+        self.result_meta = metadata(4)
+        result = media.prepare_temporal(self.source, self.root / "auto_end", "suffix", 4, extract_target_end=True)
+        self.assertNotEqual(result["target_end"], result["boundary_frame"])
+        self.assertTrue(Path(result["target_end"]).is_file())
+        # Trim, original first frame, retained last frame, full source last frame.
+        self.assertEqual(len(self.commands), 4)
+        self.assertEqual(self.option_values(self.commands[2], "-i"), [result["retained_video"]])
+        self.assertEqual(self.option_values(self.commands[3], "-i"), [str(self.source)])
+        self.assertIn("-sseof", self.commands[2])
+        self.assertIn("-sseof", self.commands[3])
+        self.assertEqual(Path(result["target_end"]).name, "target_end.png")
+
+    def test_existing_prefix_and_supplied_suffix_do_not_extract_an_extra_end_frame(self):
+        for direction in ("prefix", "suffix"):
+            with self.subTest(direction=direction):
+                self.commands.clear()
+                self.result_meta = metadata(6 if direction == "prefix" else 4)
+                result = media.prepare_temporal(self.source, self.root / direction, direction, 4)
+                self.assertNotIn("target_end", result)
+                self.assertEqual(len(self.commands), 3)
+                self.assertEqual(self.option_values(self.commands[1], "-i"), [str(self.source)])
+                self.assertEqual(self.option_values(self.commands[2], "-i"), [result["retained_video"]])
+                self.assertEqual("-sseof" in self.commands[2], direction == "suffix")
+
 
 class FFmpegFrameRateCompatibilityTests(unittest.TestCase):
     def test_unsupported_fps_mode_retries_with_legacy_cfr_before_encoding(self):
