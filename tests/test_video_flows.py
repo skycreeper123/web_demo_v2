@@ -43,12 +43,94 @@ class FlowTests(unittest.TestCase):
         path.write_text("output", encoding="utf-8")
         return [flows._artifact(step["id"] + "_result", path, flow["id"])]
 
-    def run_worker(self, flow, *, all_steps=True, execute=None, step=""):
+    def run_worker(self, flow, *, all_steps=True, execute=None, step="", duration=10, logs=None):
         flows.claim_run(flow["id"], "offline-job", step)
-        with patch.object(flows, "probe_video", return_value={"duration": 10, "fps": 30}), \
+        with patch.object(flows, "probe_video", return_value={"duration": duration, "fps": 30}), \
              patch.object(flows, "_execute_step", side_effect=execute or self.execute):
             return flows.run_flow_steps(flow_id=flow["id"], job_id="offline-job", run_all=all_steps,
-                                        log=lambda _: None, progress=lambda *_: None, update_job=lambda **_: None)
+                                        log=logs.append if logs is not None else lambda _: None,
+                                        progress=lambda *_: None, update_job=lambda **_: None)
+
+    def test_percent_creation_validates_without_reading_video(self):
+        with patch.object(flows, "probe_video", side_effect=AssertionError("Creation must not inspect media")):
+            flow = self.create("prefix", cutMode="percent", replacePercent="25")
+            self.assertIsNone(flow["inputs"]["cutSeconds"])
+            self.assertEqual(flow["inputs"]["replacePercent"], 25)
+            for value in (None, "", "bad", 0, -1, 100, 101, float("nan"), float("inf"), True):
+                with self.subTest(value=value), self.assertRaisesRegex(ValueError, "替换比例"):
+                    self.create("prefix", cutMode="percent", replacePercent=value)
+            with self.assertRaisesRegex(ValueError, "按比例或按秒数"):
+                self.create("prefix", cutMode="unknown")
+
+    def test_percent_cut_uses_original_duration_and_replacement_direction_before_first_step(self):
+        for mode, direction in (("prefix", "prefix"), ("suffix", "suffix"),
+                                ("mixed", "prefix"), ("mixed", "suffix")):
+            for duration in (10, 24):
+                with self.subTest(mode=mode, direction=direction, duration=duration):
+                    flow = self.create(mode, temporalMode=direction, cutMode="percent", replacePercent=25)
+                    expected = duration * (0.25 if direction == "prefix" else 0.75)
+                    calls, logs = [], []
+
+                    def observe(current, step, *args):
+                        self.assertEqual(current["inputs"]["cutSeconds"], expected)
+                        self.assertEqual(flows.get_flow(current["id"])["inputs"]["cutSeconds"], expected)
+                        calls.append(step["id"])
+                        return self.execute(current, step, *args)
+
+                    result = self.run_worker(flow, execute=observe, duration=duration, logs=logs)
+                    self.assertEqual(result["status"], "completed")
+                    self.assertEqual(calls[0], "spatial_prompt" if mode == "mixed" else "prepare")
+                    self.assertIn("25%", logs[0])
+                    self.assertIn(f"切点 {expected:g} 秒", logs[0])
+
+    def test_percent_under_one_frame_fails_before_any_prompt_or_media(self):
+        for mode in ("prefix", "suffix", "mixed"):
+            for percent in (0.1, 99.9):
+                with self.subTest(mode=mode, percent=percent):
+                    flow = self.create(mode, cutMode="percent", replacePercent=percent)
+                    calls = []
+                    result = self.run_worker(flow, execute=lambda *_: calls.append("called"))
+                    self.assertEqual(result["status"], "failed")
+                    self.assertIn("至少保留一帧", result["error"])
+                    self.assertEqual(calls, [])
+                    self.assertIsNone(flows.get_flow(flow["id"])["inputs"]["cutSeconds"])
+
+    def test_legacy_seconds_record_and_spatial_timing_remain_compatible(self):
+        flow = self.create("suffix")
+        with flows._LOCK:
+            legacy = flows._load(flow["id"])
+            legacy["inputs"].pop("cutMode")
+            legacy["inputs"].pop("replacePercent")
+            flows._save(legacy)
+        self.assertEqual(self.run_worker(flow)["status"], "completed")
+        self.assertEqual(flows.get_flow(flow["id"])["inputs"]["cutSeconds"], 4)
+        spatial = self.create(cutMode="unused", replacePercent="invalid", cutSeconds="invalid")
+        self.assertEqual(spatial["inputs"]["cutSeconds"], 0)
+        self.assertIsNone(spatial["inputs"]["replacePercent"])
+
+    def test_resolved_percent_cut_is_persisted_and_reused_on_failed_step_retry(self):
+        flow = self.create("prefix", cutMode="percent", replacePercent=50)
+
+        def fail_motion(current, step, *args):
+            if step["id"] == "motion_render":
+                raise RuntimeError("offline motion failure")
+            return self.execute(current, step, *args)
+
+        self.assertEqual(self.run_worker(flow, execute=fail_motion)["status"], "failed")
+        failed = flows.get_flow(flow["id"])
+        self.assertEqual(failed["inputs"]["cutSeconds"], 5)
+        self.assertEqual(failed["inputs"]["replacePercent"], 50)
+        calls = []
+
+        def retry(current, step, *args):
+            self.assertEqual(current["inputs"]["cutSeconds"], 5)
+            calls.append(step["id"])
+            return self.execute(current, step, *args)
+
+        # A later metadata read must not shift the cut used by retained artifacts.
+        self.assertEqual(self.run_worker(failed, execute=retry, duration=10.001)["status"], "completed")
+        self.assertEqual(calls, ["motion_render", "assemble"])
+        self.assertEqual(flows.get_flow(flow["id"])["inputs"]["cutSeconds"], 5)
 
     def test_recipe_orders_and_optional_uploaded_start(self):
         prefix = self.create("prefix")

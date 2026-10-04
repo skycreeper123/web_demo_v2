@@ -8,10 +8,11 @@ const {test} = require("node:test");
 const root = path.resolve(__dirname, "..");
 const markup = fs.readFileSync(path.join(root, "frontend/index.html"), "utf8");
 const source = fs.readFileSync(path.join(root, "frontend/video-batches.js"), "utf8");
+const flowSource = fs.readFileSync(path.join(root, "frontend/video-flows.js"), "utf8");
 const plain = value => JSON.parse(JSON.stringify(value));
 
-function harness(respond) {
-  const elements = new Map(), events = new Map(), calls = [];
+function harness(respond, options = {}) {
+  const elements = new Map(), events = new Map(), calls = [], downloads = [];
   const defaults = {name: "offline", mode: "spatial", temporalMode: "spatial", spatialTarget: "foreground", promptSource: "ai", keepAudio: true};
   function element(id, tag = "div", type = "") {
     if (elements.has(id)) return elements.get(id);
@@ -23,7 +24,7 @@ function harness(respond) {
       }},
       addEventListener() {}, removeAttribute(name) { delete this[name]; }, setAttribute(name, value) { this[name] = value; },
       querySelector() { return this.label || (this.label = {textContent: ""}); },
-      querySelectorAll() { return [...elements.values()].filter(item => ["input", "select", "textarea", "button"].includes(item.tag)); },
+      querySelectorAll() { return this.id === "flowCreateForm" ? [...elements.values()].filter(item => ["input", "select", "textarea", "button"].includes(item.tag) && !["flowNewBtn", "batchNewBtn"].includes(item.id)) : []; },
       contains() { return true; }, click() {}, replaceChildren() {},
     };
     Object.defineProperty(node, "innerHTML", {get() { return this._html || ""; }, set(value) { this._html = value; register(value); }});
@@ -34,6 +35,13 @@ function harness(respond) {
     for (const match of html.matchAll(/<(\w+)\b([^>]*\bid="([^"]+)"[^>]*)>/g)) {
       const node = element(match[3], match[1], /\btype="([^"]+)"/.exec(match[2])?.[1] || "");
       if (/\bhidden(?:\s|$)/.test(match[2])) node.hidden = true;
+      const value = /\bvalue="([^"]*)"/.exec(match[2]);
+      if (value) node.value = value[1];
+    }
+    for (const select of html.matchAll(/<select\b[^>]*id="([^"]+)"[^>]*>([\s\S]*?)<\/select>/g)) {
+      const options = [...select[2].matchAll(/<option\b([^>]*)>/g)];
+      const selected = options.find(option => /\bselected\b/.test(option[1])) || options[0];
+      if (selected) element(select[1]).value = /\bvalue="([^"]*)"/.exec(selected[1])?.[1] || "";
     }
   }
   register(markup);
@@ -42,12 +50,14 @@ function harness(respond) {
   $("flowPromptSource").value = "ai";
   $("batchMaterialSource").value = "directories";
   const storage = () => { const values = new Map(); return {getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value)}; };
-  const document = {getElementById: $, createElement: tag => element(`anonymous-${elements.size}`, tag),
+  const document = {getElementById: $, querySelectorAll: () => [], createElement: tag => element(`anonymous-${elements.size}`, tag),
     addEventListener: (name, listener) => { if (!events.has(name)) events.set(name, []); events.get(name).push(listener); },
     dispatchEvent: event => { for (const listener of events.get(event.type) || []) listener(event); }};
   const window = {addEventListener() {}, VideoFlowUI: {getDefaults: () => ({...defaults}), uploadsPending: () => 0, updateCreateFields() {}, showCreate() {}, openFlow: async () => {}}};
+  window.location = {href: "http://workbench.local/", origin: "http://workbench.local"};
+  class TestURL extends URL { static createObjectURL(blob) { downloads.push(blob); return `blob:offline-${downloads.length}`; } static revokeObjectURL() {} }
   const context = {window, document, location: {href: "http://workbench.local/", origin: "http://workbench.local"},
-    localStorage: storage(), sessionStorage: storage(), URL, Blob, console,
+    localStorage: storage(), sessionStorage: storage(), URL: TestURL, Blob, console,
     CustomEvent: class { constructor(type, options = {}) { this.type = type; this.detail = options.detail; } },
     setTimeout: () => 1, clearTimeout() {}, bindDropzone() {}, renderStackList() {},
     fetch: async (url, options = {}) => {
@@ -57,12 +67,17 @@ function harness(respond) {
       return {ok: result?.ok !== false, status: result?.status || 200, json: async () => result?.data ?? result};
     },
   };
+  if (options.draft) context.sessionStorage.setItem("video-batches:create-draft", JSON.stringify(options.draft));
   vm.createContext(context);
-  const instrumented = source.replace(/\}\)\(\);\s*$/, "globalThis.__batch = {state, parseCsv, scanPayload, creationFingerprint, scanMaterials, uploadRows, createBatch, refreshBatch, chooseFiles, batchAction};\n})();");
+  if (options.realFlows) {
+    const instrumentedFlows = flowSource.replace(/\}\)\(\);\s*$/, "globalThis.__flow = {flowState, createDefaults, updateCreateFields, createFlow, renderInputs, renderFlow};\n})();");
+    vm.runInContext(instrumentedFlows, context, {filename: "video-flows.js"});
+  }
+  const instrumented = source.replace(/\}\)\(\);\s*$/, "globalThis.__batch = {state, parseCsv, validateRows, validateTiming, scanPayload, creationFingerprint, scanMaterials, uploadRows, createBatch, refreshBatch, chooseFiles, batchAction, templateDownload};\n})();");
   vm.runInContext(instrumented, context, {filename: "video-batches.js"});
   $("batchDir-videos").value = "/data/videos";
   $("batchDir-references").value = "/data/references";
-  return {api: context.__batch, $, defaults, calls, submit: () => context.__batch.createBatch({preventDefault() {}})};
+  return {api: context.__batch, flowApi: context.__flow, $, defaults, calls, downloads, submit: () => context.__batch.createBatch({preventDefault() {}})};
 }
 
 function scanResult(count = 2) {
@@ -217,4 +232,161 @@ test("refresh reads cumulative batch logs and exposes full download", async () =
   assert.match(h.$("batchLogs").textContent, /first attempt\nretry attempt/);
   assert.equal(h.$("batchLogDownload").hidden, false);
   assert.ok(h.$("batchLogDownload").href.endsWith("/logs.txt"));
+});
+
+test("new temporal forms default to 30 percent and disable hidden timing controls", () => {
+  const h = harness(() => { throw new Error("No request expected"); }, {realFlows: true});
+  for (const mode of ["prefix", "suffix", "mixed"]) {
+    h.$("flowMode").value = mode;
+    h.$("flowTemporalMode").value = "suffix";
+    h.$("flowInputMode").value = "single";
+    h.flowApi.updateCreateFields();
+    const defaults = h.flowApi.createDefaults();
+    assert.equal(defaults.cutMode, "percent");
+    assert.equal(defaults.replacePercent, 30);
+    assert.equal(defaults.cutSeconds, null);
+    assert.equal(h.$("flowReplacePercent").required, true);
+    assert.equal(h.$("flowCutSeconds").disabled, true);
+    assert.equal(h.$("flowCutSeconds").required, false);
+    assert.equal(h.$("flowSecondsField").hidden, true);
+  }
+  assert.match(h.$("flowPercentHint").textContent, /最后 30%/);
+  h.$("flowMode").value = "spatial";
+  h.flowApi.updateCreateFields();
+  assert.equal(h.$("flowCutField").hidden, true);
+  assert.equal(h.$("flowCutMode").disabled, true);
+  assert.equal(h.$("flowReplacePercent").disabled, true);
+  assert.equal(h.$("flowReplacePercent").required, false);
+});
+
+test("switching to seconds preserves values but submits only the active timing field", () => {
+  const h = harness(() => { throw new Error("No request expected"); }, {realFlows: true});
+  h.$("flowMode").value = "prefix"; h.$("flowInputMode").value = "single";
+  h.$("flowCutMode").value = "seconds"; h.$("flowCutSeconds").value = "4.5";
+  h.flowApi.updateCreateFields();
+  assert.equal(h.$("flowPercentField").hidden, true);
+  assert.equal(h.$("flowReplacePercent").disabled, true);
+  assert.equal(h.$("flowReplacePercent").required, false);
+  assert.equal(h.$("flowCutSeconds").required, true);
+  assert.equal(h.flowApi.createDefaults().cutSeconds, 4.5);
+  assert.equal(h.flowApi.createDefaults().replacePercent, null);
+  h.$("flowCutMode").value = "percent";
+  h.flowApi.updateCreateFields();
+  assert.equal(h.flowApi.createDefaults().replacePercent, 30);
+  assert.equal(h.flowApi.createDefaults().cutSeconds, null);
+  assert.equal(h.$("flowCutSeconds").value, "4.5");
+});
+
+test("legacy browser drafts without a timing mode retain their seconds meaning", () => {
+  const h = harness(() => { throw new Error("No request expected"); }, {realFlows: true, draft: {flowMode: "suffix", flowCutSeconds: "3.5"}});
+  assert.equal(h.$("flowCutMode").value, "seconds");
+  assert.equal(h.flowApi.createDefaults().cutSeconds, 3.5);
+  assert.equal(h.flowApi.createDefaults().replacePercent, null);
+});
+
+test("saved percentage drafts restore their percentage without reverting to seconds", () => {
+  const h = harness(() => { throw new Error("No request expected"); }, {realFlows: true, draft: {flowMode: "prefix", flowCutMode: "percent", flowReplacePercent: "42.5", flowCutSeconds: "8"}});
+  assert.equal(h.flowApi.createDefaults().cutMode, "percent");
+  assert.equal(h.flowApi.createDefaults().replacePercent, 42.5);
+  assert.equal(h.flowApi.createDefaults().cutSeconds, null);
+});
+
+test("invalid single-flow percentages are rejected before sending a request", async () => {
+  const h = harness(() => { throw new Error("No request expected"); }, {realFlows: true});
+  h.$("flowMode").value = "prefix"; h.$("flowInputMode").value = "single";
+  for (const value of ["", "0", "100", "-1", "101", "not-a-number", "Infinity"]) {
+    h.$("flowReplacePercent").value = value;
+    await h.flowApi.createFlow({preventDefault() {}});
+    assert.match(h.$("flowNotice").textContent, /大于 0、小于 100/);
+  }
+  assert.equal(h.calls.length, 0);
+});
+
+for (const mode of ["prefix", "suffix", "mixed"]) test(`${mode} one-click forwards replacement percentage unchanged to scan and create`, async () => {
+  const h = harness(({url, body}) => {
+    if (url.endsWith("/scan") || url === "/api/video-batches") {
+      assert.equal(body.defaults.cutMode, "percent");
+      assert.equal(body.defaults.replacePercent, 30);
+      assert.equal(body.defaults.cutSeconds, null);
+    }
+    if (url.endsWith("/scan")) return scanResult(1);
+    if (url === "/api/video-batches") return {batch: batch("draft", 1)};
+    if (url.endsWith("/run")) return {batch: batch("running", 1)};
+    throw new Error(`Unexpected request: ${url}`);
+  }, {realFlows: true});
+  h.$("flowMode").value = mode; h.$("flowTemporalMode").value = "suffix";
+  h.flowApi.updateCreateFields();
+  await h.submit();
+  assert.deepEqual(h.calls.map(call => call.url), ["/api/video-batches/scan", "/api/video-batches", "/api/video-batches/abc123/run"]);
+});
+
+test("directory timing validation supports percentages and keeps legacy seconds behavior", async () => {
+  const h = harness(() => { throw new Error("No request expected"); });
+  Object.assign(h.defaults, {mode: "prefix", cutMode: "percent"});
+  for (const value of [null, 0, 100, -1, NaN, Infinity]) {
+    h.defaults.replacePercent = value;
+    await h.submit();
+    assert.match(h.$("flowNotice").textContent, /比例/);
+  }
+  assert.equal(h.calls.length, 0);
+  assert.equal(h.api.validateTiming({mode: "prefix", cutSeconds: 3}), "");
+  assert.match(h.api.validateTiming({mode: "prefix", replacePercent: 30}), /切点/);
+  assert.equal(h.api.validateTiming({mode: "prefix", cutMode: "percent", replacePercent: 0.01}), "");
+  assert.equal(h.api.validateTiming({mode: "suffix", cutMode: "percent", replacePercent: 99.99}), "");
+});
+
+test("CSV row timing precedence matches the backend and validates effective values", () => {
+  const h = harness(() => { throw new Error("No request expected"); });
+  const parsed = h.api.parseCsv("videoPath,cutMode,replacePercent,cutSeconds\n/a.mp4,seconds,25,2\n/b.mp4,percent,45,3\n/c.mp4,,35,4\n/d.mp4,,,5\n/e.mp4,,,\n/f.mp4,percent,0,7\n/g.mp4,invalid,10,2");
+  const rows = h.api.validateRows(parsed, {mode: "prefix", cutMode: "percent", replacePercent: 30, cutSeconds: null});
+  assert.deepEqual(plain(rows.map(row => row.effective.cutMode)), ["seconds", "percent", "percent", "seconds", "percent", "percent", "invalid"]);
+  assert.deepEqual(plain(rows.slice(0, 5).map(row => row.errors)), [[], [], [], [], []]);
+  assert.match(rows[5].errors.join(), /比例/);
+  assert.match(rows[6].errors.join(), /cutMode/);
+  const legacy = h.api.validateRows(h.api.parseCsv("videoPath,cutSeconds\n/a.mp4,2"), {mode: "prefix", cutMode: "percent", replacePercent: 30});
+  assert.equal(legacy[0].effective.cutMode, "seconds");
+});
+
+test("CSV submit keeps inferred modes for the backend and serializes numeric percentages", async () => {
+  const h = harness(({url, body}) => {
+    if (url === "/api/video-batches") {
+      assert.deepEqual(body.rows, [{videoPath: "/a.mp4", replacePercent: 25}, {videoPath: "/b.mp4", cutSeconds: 4}, {videoPath: "/c.mp4", cutMode: "percent", replacePercent: 40, cutSeconds: 3}]);
+      return {batch: batch("draft", 3)};
+    }
+    if (url.endsWith("/run")) return {batch: batch("running", 3)};
+    throw new Error(`Unexpected request: ${url}`);
+  });
+  Object.assign(h.defaults, {mode: "prefix", cutMode: "percent", replacePercent: 30});
+  h.$("batchMaterialSource").value = "csv";
+  h.$("batchCsvText").value = "videoPath,cutMode,replacePercent,cutSeconds\n/a.mp4,,25,\n/b.mp4,,,4\n/c.mp4,percent,40,3";
+  await h.submit();
+  assert.equal(h.api.state.batch.status, "running");
+});
+
+test("percentage template contains mode and ratio without a misleading seconds value", async () => {
+  const h = harness(() => { throw new Error("No request expected"); });
+  Object.assign(h.defaults, {mode: "suffix", cutMode: "percent", replacePercent: 30, cutSeconds: null});
+  h.api.templateDownload();
+  const row = h.api.parseCsv(await h.downloads[0].text()).rows[0].values;
+  assert.equal(row.cutMode, "percent"); assert.equal(row.replacePercent, "30"); assert.equal(row.cutSeconds, "");
+});
+
+test("flow details distinguish percent from legacy seconds and show the resolved cut", () => {
+  const h = harness(() => { throw new Error("No request expected"); }, {realFlows: true});
+  h.flowApi.renderInputs({mode: "suffix", inputs: {cutMode: "percent", replacePercent: 30, cutSeconds: 8.123456}});
+  assert.match(h.$("flowInputSummary").innerHTML, /替换后 30%.*已解析切点：8\.123 秒/);
+  h.flowApi.renderInputs({mode: "prefix", inputs: {cutSeconds: 4}});
+  assert.match(h.$("flowInputSummary").innerHTML, /切点：4 秒/);
+  assert.doesNotMatch(h.$("flowInputSummary").innerHTML, /替换前.*%/);
+});
+
+test("polling refreshes the resolved percentage cut without clearing prompt drafts", () => {
+  const h = harness(() => { throw new Error("No request expected"); }, {realFlows: true});
+  const flow = {id: "percent-flow", mode: "suffix", status: "running", inputs: {cutMode: "percent", replacePercent: 30, cutSeconds: null}, steps: []};
+  h.flowApi.renderFlow(flow, true);
+  assert.doesNotMatch(h.$("flowInputSummary").innerHTML, /已解析切点/);
+  h.flowApi.flowState.drafts.set("percent-flow:motion_prompt", {prompt: "unsaved text"});
+  h.flowApi.renderFlow({...flow, inputs: {...flow.inputs, cutSeconds: 7}}, false);
+  assert.match(h.$("flowInputSummary").innerHTML, /已解析切点：7 秒/);
+  assert.equal(h.flowApi.flowState.drafts.get("percent-flow:motion_prompt").prompt, "unsaved text");
 });

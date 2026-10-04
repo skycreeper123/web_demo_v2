@@ -681,6 +681,8 @@ V5 的前后景选择映射为 RMBG `invert_output`，新流程关闭 77 帧加�
 
 ### 12.3 接口
 
+时间范围由 `cutMode` 选择：`seconds` 使用 `cutSeconds`，`percent` 使用 `replacePercent`（有限数值，严格在 0–100 之间）。省略 `cutMode` 的旧请求和已保存流程按秒数解释；前端新建任务默认按比例。创建阶段仅校验配置，执行阶段在任何 Prompt/GPU 步骤之前读取原视频时长并计算切点：前段为 `duration * replacePercent / 100`，后段为 `duration * (1 - replacePercent / 100)`。混合模式也以原视频为基准。计算结果保存为流程的 `inputs.cutSeconds`，供剪辑、拼接和重试使用；两侧至少一帧的校验仍适用，日志记录比例与实际切点。
+
 | 接口 | 用途 |
 | --- | --- |
 | `GET /api/video-flows` | 流程历史 |
@@ -698,7 +700,7 @@ V5 的前后景选择映射为 RMBG `invert_output`，新流程关闭 77 帧加�
 
 `video_batch_inputs.py` 提供服务器目录递归扫描及浏览器文件元数据匹配，沿用视频与主参考图同名、`_1 / _2` 为补充图的规则。支持输入 `{defaults, inputMode, directories, files}`：目录和文件角色均为 `videos / references / startImages / endImages`。返回匹配条目、素材角色、问题及待创建的 `rows`；浏览器素材缺少服务器路径时标记需要上传。重复候选不静默选择。纯时间模式将参考目录解释为新首图或目标尾图；混合模式的参考目录始终服务空间替换，时间目标走独立目录。
 
-`video_batch_service.py` 管理同一配方的多组素材，`video-batches.js` 提供文件夹匹配、一键执行、高级 CSV、批次历史、行状态与成片入口。创建参数为 `{name, defaults, rows}`，`defaults` 复用单流程配置，`rows` 仅覆盖名称、素材、切点和编辑需求；所有行统一模式、方向、空间范围与自动 Prompt 来源。要求至少一组，不人为限定总组数，先验证全体行，再保存批次和子流程。前端的一键执行依次调用扫描、必要的上传、创建和启动；扫描有阻塞项时整批不启动，创建成功但启动失败的批次仍可从历史恢复。
+`video_batch_service.py` 管理同一配方的多组素材，`video-batches.js` 提供文件夹匹配、一键执行、高级 CSV、批次历史、行状态与成片入口。创建参数为 `{name, defaults, rows}`，`defaults` 复用单流程配置，`rows` 仅覆盖名称、素材、时间范围和编辑需求；所有行统一模式、方向、空间范围与自动 Prompt 来源。时间范围支持 `cutMode / replacePercent / cutSeconds`，行内显式 `cutMode` 优先；无显式模式时，非空 `replacePercent` 推断为按比例，否则非空 `cutSeconds` 推断为按秒，其余继承默认配置。每组按各自原视频的时长解析比例。要求至少一组，不人为限定总组数，先验证全体行，再保存批次和子流程。前端的一键执行依次调用扫描、必要的上传、创建和启动；扫描有阻塞项时整批不启动，创建成功但启动失败的批次仍可从历史恢复。
 
 补充参考图登记为独立素材，按主图、补图1、补图2顺序交给空间 Prompt 模块；Comfy V5 始终绑定主图，导出的提示词 CSV 也保留主图路径。
 

@@ -192,8 +192,8 @@
                 <div id="batchCsvPanel" hidden>
                   <div class="section-header"><h2>CSV 素材表</h2><button id="batchTemplateBtn" class="btn btn-ghost" type="button">下载 CSV 模板</button></div>
                   <label class="flow-upload-label">选择 UTF-8 CSV 文件<input id="batchCsvFile" type="file" accept=".csv,text/csv" /></label>
-                  <label class="prompt-field"><span>或粘贴、编辑 CSV 内容</span><textarea id="batchCsvText" class="textarea batch-csv-text" rows="5" spellcheck="false" placeholder="name,videoPath,referenceImagePath,startImagePath,endImagePath,cutSeconds,editInstruction"></textarea></label>
-                  <div class="flow-create-footer"><p class="panel-note">CSV 非空字段优先，空白字段继承统一参数。支持引号内逗号、换行和 UTF-8 BOM；其中的文件路径须可被服务器读取。</p><button id="batchParseBtn" class="btn btn-ghost" type="button">解析并预览</button></div>
+                  <label class="prompt-field"><span>或粘贴、编辑 CSV 内容</span><textarea id="batchCsvText" class="textarea batch-csv-text" rows="5" spellcheck="false" placeholder="name,videoPath,referenceImagePath,startImagePath,endImagePath,cutMode,replacePercent,cutSeconds,editInstruction"></textarea></label>
+                  <div class="flow-create-footer"><p class="panel-note">CSV 非空字段优先，空白字段继承统一参数。cutMode 可填 percent（比例）或 seconds（秒）；未填时，本行 replacePercent 优先，其次 cutSeconds，再继承统一设置。支持引号内逗号、换行和 UTF-8 BOM；文件路径须可被服务器读取。</p><button id="batchParseBtn" class="btn btn-ghost" type="button">解析并预览</button></div>
                   <div id="batchCsvSummary" class="flow-notice" role="status" aria-live="polite">尚未导入素材表。</div>
                   <div id="batchCsvErrors" class="flow-error" role="alert" hidden></div>
                   <div id="batchCsvPreview" class="batch-table-wrap" hidden></div>
@@ -207,7 +207,11 @@
                 <div id="flowEndField" class="flow-source-field" hidden><label class="prompt-field" for="flowEndPath"><span>目标尾图 <span aria-hidden="true">*</span></span><input id="flowEndPath" class="input" placeholder="替换后段结束时的目标图片路径" /></label><label class="flow-upload-label">或上传目标尾图<input type="file" accept=".png,.jpg,.jpeg,.webp,.bmp" data-flow-upload="flowEndPath" /></label><small id="flowEndPathUploadStatus" class="panel-note"></small><div id="flowEndPathPreview" class="flow-source-preview"></div></div>
               </div>
               <div class="form-grid">
-                <label id="flowCutField" class="prompt-field" hidden><span>切点（从视频开始计算，秒）</span><input id="flowCutSeconds" class="input" type="number" min="0.001" step="any" placeholder="例如 3.5" /><small class="panel-note">前段替换切点之前，后段替换切点之后；切点须小于原视频时长。</small></label>
+                <div id="flowCutField" hidden>
+                  <label class="prompt-field"><span>替换范围</span><select id="flowCutMode" class="input"><option value="percent" selected>按视频比例</option><option value="seconds">按秒设置切点</option></select></label>
+                  <label id="flowPercentField" class="prompt-field"><span id="flowPercentLabel">替换比例（%）</span><input id="flowReplacePercent" class="input" type="number" min="0" max="100" step="any" value="30" placeholder="例如 30" /><small id="flowPercentHint" class="panel-note">比例须大于 0、小于 100；每条视频按自身时长计算。</small></label>
+                  <label id="flowSecondsField" class="prompt-field" hidden><span>切点（从视频开始计算，秒）</span><input id="flowCutSeconds" class="input" type="number" min="0" step="any" placeholder="例如 3.5" disabled /><small class="panel-note">前段替换切点之前，后段替换切点之后；切点须大于 0 且小于原视频时长。</small></label>
+                </div>
                 <label class="prompt-field"><span>提示词来源</span><select id="flowPromptSource" class="input"><option value="ai">自动生成 · 读取对应模块配置</option><option value="manual">手动填写 · 逐步编辑提示词</option></select><small id="flowPromptSourceHint" class="panel-note">每次自动生成读取对应模块已保存的 API、System Prompt 与 User Prompt；缺少有效配置时会给出错误。</small></label>
               </div>
               <label class="prompt-field"><span>编辑需求</span><textarea id="flowInstruction" class="textarea flow-instruction" rows="3" placeholder="描述替换内容、新首图的画面和动作，或首尾画面之间的运动方向。"></textarea></label>

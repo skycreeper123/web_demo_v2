@@ -137,7 +137,8 @@ def list_flows() -> list[dict[str, Any]]:
 
 def flow_options() -> dict[str, Any]:
     return {"modes": [{"key": key, "label": label} for key, label in MODES.items()], "templates": TEMPLATES,
-            "mixedOrder": "先空间替换，再对处理结果做前段或后段替换。", "cutMeaning": "切点为从原视频开始计算的秒数。"}
+            "mixedOrder": "先空间替换，再对处理结果做前段或后段替换。",
+            "cutMeaning": "可按原视频时长的比例替换前段或后段；秒数模式的切点从原视频开始计算。"}
 
 
 def _input_path(value: Any, label: str, suffixes: set[str], required: bool = True) -> str:
@@ -170,9 +171,27 @@ def build_flow(payload: dict[str, Any]) -> dict[str, Any]:
     prompt_source = str(payload.get("promptSource") or "ai")
     if prompt_source not in {"ai", "manual"}:
         raise ValueError("提示词来源无效。")
-    cut = float(payload.get("cutSeconds") or 0) if is_temporal else 0.0
-    if is_temporal and (not math.isfinite(cut) or cut <= 0):
-        raise ValueError("请填写大于 0 的切点秒数。")
+    cut_mode, percent, cut = "seconds", None, 0.0
+    if is_temporal:
+        cut_mode = str(payload.get("cutMode") or "seconds").strip()
+        if cut_mode not in {"percent", "seconds"}:
+            raise ValueError("替换范围必须选择按比例或按秒数。")
+        if cut_mode == "percent":
+            try:
+                percent = float(payload.get("replacePercent"))
+            except (TypeError, ValueError) as exc:
+                raise ValueError("替换比例必须是大于 0 且小于 100 的数值。") from exc
+            if isinstance(payload.get("replacePercent"), bool) or not math.isfinite(percent) or not 0 < percent < 100:
+                raise ValueError("替换比例必须是大于 0 且小于 100 的数值。")
+            # Resolve against this source video only when its worker starts.
+            cut = None
+        else:
+            try:
+                cut = float(payload.get("cutSeconds") or 0)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("请填写大于 0 的切点秒数。") from exc
+            if not math.isfinite(cut) or cut <= 0:
+                raise ValueError("请填写大于 0 的切点秒数。")
     inputs = {
         "videoPath": _input_path(payload.get("videoPath"), "原视频", _VIDEO_SUFFIXES),
         "referenceImagePath": _input_path(payload.get("referenceImagePath"), "空间替换参考图", _IMAGE_SUFFIXES, spatial),
@@ -180,7 +199,8 @@ def build_flow(payload: dict[str, Any]) -> dict[str, Any]:
         "referenceAlt2Path": _input_path(payload.get("referenceAlt2Path"), "补充参考图 2", _IMAGE_SUFFIXES, False),
         "startImagePath": _input_path(payload.get("startImagePath"), "新首图", _IMAGE_SUFFIXES, False),
         "endImagePath": _input_path(payload.get("endImagePath"), "目标尾图", _IMAGE_SUFFIXES, is_temporal and temporal == "suffix"),
-        "spatialTarget": spatial_target, "temporalMode": temporal, "cutSeconds": cut,
+        "spatialTarget": spatial_target, "temporalMode": temporal, "cutMode": cut_mode,
+        "replacePercent": percent, "cutSeconds": cut,
         "editInstruction": str(payload.get("editInstruction") or "").strip()[:12000],
         "keepAudio": payload.get("keepAudio", True) is not False, "promptSource": prompt_source,
     }
@@ -595,11 +615,27 @@ def run_flow_steps(*, flow_id: str, job_id: str, run_all: bool,
         # Check temporal bounds before any paid prompt or GPU request, including mixed recipes.
         if flow["mode"] != "spatial":
             source_meta = probe_video(_path(flow, "source_video"))
-            cut = flow["inputs"]["cutSeconds"]
+            inputs = flow["inputs"]
+            percent_mode = inputs.get("cutMode", "seconds") == "percent"
+            cut = inputs["cutSeconds"]
+            if percent_mode and cut is None:
+                fraction = inputs["replacePercent"] / 100
+                cut = source_meta["duration"] * (fraction if inputs["temporalMode"] == "prefix" else 1 - fraction)
             if not 0 < cut < source_meta["duration"]:
                 raise ValueError(f"切点必须在 0 到 {source_meta['duration']:.3f} 秒之间。")
             if min(cut, source_meta["duration"] - cut) < 1 / source_meta["fps"]:
                 raise ValueError("切点两侧都必须至少保留一帧，请调整切点。")
+            if percent_mode:
+                if inputs["cutSeconds"] is None:
+                    with _LOCK:
+                        # Preserve a stop request received during metadata reads.
+                        flow = _load(flow_id)
+                        flow["inputs"]["cutSeconds"] = cut
+                        _save(flow)
+                direction = "前段" if inputs["temporalMode"] == "prefix" else "后段"
+                replacement = cut if direction == "前段" else source_meta["duration"] - cut
+                log(f"按比例替换{direction} {inputs['replacePercent']:g}%；原视频 {source_meta['duration']:.6g} 秒，"
+                    f"切点 {cut:.6g} 秒，替换片段 {replacement:.6g} 秒。")
         for index in range(start_index, len(flow["steps"])):
             with _LOCK:
                 flow = _load(flow_id)

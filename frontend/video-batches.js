@@ -3,8 +3,8 @@
   const $ = id => document.getElementById(id);
   const flowUI = window.VideoFlowUI;
   const html = value => String(value ?? "").replace(/[&<>"']/g, char => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[char]));
-  const columns = ["name", "videoPath", "referenceImagePath", "referenceAlt1Path", "referenceAlt2Path", "startImagePath", "endImagePath", "cutSeconds", "editInstruction"];
-  const labels = {name: "名称", videoPath: "原视频", referenceImagePath: "参考图", referenceAlt1Path: "补充参考图 1", referenceAlt2Path: "补充参考图 2", startImagePath: "新首图", endImagePath: "目标尾图", cutSeconds: "切点（秒）", editInstruction: "编辑需求"};
+  const columns = ["name", "videoPath", "referenceImagePath", "referenceAlt1Path", "referenceAlt2Path", "startImagePath", "endImagePath", "cutMode", "replacePercent", "cutSeconds", "editInstruction"];
+  const labels = {name: "名称", videoPath: "原视频", referenceImagePath: "参考图", referenceAlt1Path: "补充参考图 1", referenceAlt2Path: "补充参考图 2", startImagePath: "新首图", endImagePath: "目标尾图", cutMode: "范围方式", replacePercent: "替换比例（%）", cutSeconds: "切点（秒）", editInstruction: "编辑需求"};
   const roles = ["videos", "references", "startImages", "endImages"];
   const assetFields = ["videoPath", "referenceImagePath", "referenceAlt1Path", "referenceAlt2Path", "startImagePath", "endImagePath"];
   const videoExtensions = /\.(mp4|mov|avi|mkv|webm|m4v)$/i;
@@ -77,13 +77,23 @@
     return parsed.rows.map(row => {
       const effective = {...defaults};
       for (const [key, value] of Object.entries(row.values)) if (value !== "") effective[key] = value;
+      effective.cutMode = row.values.cutMode || (row.values.replacePercent !== undefined && row.values.replacePercent !== "" ? "percent" : row.values.cutSeconds !== undefined && row.values.cutSeconds !== "" ? "seconds" : defaults.cutMode || "seconds");
       const errors = [];
       if (!effective.videoPath) errors.push("缺少原视频路径（本行或统一素材）");
       if (["spatial", "mixed"].includes(defaults.mode) && !effective.referenceImagePath) errors.push("缺少参考图（本行或统一素材）");
       if (temporal === "suffix" && !effective.endImagePath) errors.push("缺少目标尾图（本行或统一素材）");
-      if (defaults.mode !== "spatial" && (!Number.isFinite(Number(effective.cutSeconds)) || Number(effective.cutSeconds) <= 0)) errors.push("切点须大于 0（本行或统一参数）");
+      const timingError = validateTiming(effective);
+      if (timingError) errors.push(timingError);
       return {...row, effective, errors};
     });
+  }
+  function validateTiming(inputs) {
+    if (inputs.mode === "spatial") return "";
+    const mode = inputs.cutMode || "seconds";
+    if (!["percent", "seconds"].includes(mode)) return "cutMode 只能是 percent（比例）或 seconds（秒）";
+    if (mode === "percent" && (!Number.isFinite(Number(inputs.replacePercent)) || Number(inputs.replacePercent) <= 0 || Number(inputs.replacePercent) >= 100)) return "替换比例须大于 0、小于 100（本行或统一参数）";
+    if (mode === "seconds" && (!Number.isFinite(Number(inputs.cutSeconds)) || Number(inputs.cutSeconds) <= 0)) return "切点须大于 0（本行或统一参数）";
+    return "";
   }
   function renderPreview() {
     if (!state.parsed) return false;
@@ -250,7 +260,8 @@
   async function scanMaterials(defaults, fingerprint) {
     const payload = scanPayload(defaults);
     if (!payload.directories.videos && !payload.files.videos.length) throw new Error("请提供原视频目录。生成数量由目录中的视频决定。");
-    if (defaults.mode !== "spatial" && (!Number.isFinite(Number(defaults.cutSeconds)) || Number(defaults.cutSeconds) <= 0)) throw new Error("请填写大于 0 的统一切点（从视频开始计算，秒）。");
+    const timingError = validateTiming(defaults);
+    if (timingError) throw new Error(timingError);
     preparationLog(payload.inputMode === "files" ? `正在匹配 ${payload.files.videos.length} 个视频及所选图片…` : "正在扫描服务器目录并按文件名匹配…");
     const scan = await api("/api/video-batches/scan", payload);
     if (fingerprint !== creationFingerprint()) throw new Error("素材或统一设置已改变，请重新匹配后生成。");
@@ -311,6 +322,7 @@
         if (!control || !$("flowCreateForm").contains(control) || control.type === "file") continue;
         if (control.type === "checkbox") control.checked = !!value; else control.value = String(value ?? "");
       }
+      if (values && !Object.prototype.hasOwnProperty.call(values, "flowCutMode") && Object.prototype.hasOwnProperty.call(values, "flowCutSeconds")) $("flowCutMode").value = "seconds";
     } catch {}
     flowUI.updateCreateFields();
     updateInputMode();
@@ -319,7 +331,8 @@
   function templateDownload() {
     const defaults = flowUI.getDefaults();
     const temporal = defaults.mode === "mixed" ? defaults.temporalMode : defaults.mode;
-    const example = {name: "素材 001", videoPath: "/data/videos/001.mp4", referenceImagePath: ["spatial", "mixed"].includes(defaults.mode) ? "/data/references/001.png" : "", startImagePath: "", endImagePath: temporal === "suffix" ? "/data/end_frames/001.png" : "", cutSeconds: defaults.mode !== "spatial" ? defaults.cutSeconds || 3 : "", editInstruction: ""};
+    const timed = defaults.mode !== "spatial", cutMode = defaults.cutMode || "seconds";
+    const example = {name: "素材 001", videoPath: "/data/videos/001.mp4", referenceImagePath: ["spatial", "mixed"].includes(defaults.mode) ? "/data/references/001.png" : "", startImagePath: "", endImagePath: temporal === "suffix" ? "/data/end_frames/001.png" : "", cutMode: timed ? cutMode : "", replacePercent: timed && cutMode === "percent" ? defaults.replacePercent ?? 30 : "", cutSeconds: timed && cutMode === "seconds" ? defaults.cutSeconds ?? 3 : "", editInstruction: ""};
     const escape = value => `"${String(value ?? "").replace(/"/g, '""')}"`;
     const content = "\uFEFF" + columns.join(",") + "\r\n" + columns.map(key => escape(example[key])).join(",") + "\r\n";
     const url = URL.createObjectURL(new Blob([content], {type: "text/csv;charset=utf-8"}));
@@ -426,7 +439,7 @@
       let rows;
       if (source === "csv") {
         if (!parseInput()) throw new Error("请修正素材表中的全部问题后再生成。");
-        rows = state.parsed.rows.map(row => Object.fromEntries(Object.entries(row.values).filter(([, value]) => value !== "").map(([key, value]) => [key, key === "cutSeconds" ? Number(value) : value])));
+        rows = state.parsed.rows.map(row => Object.fromEntries(Object.entries(row.values).filter(([, value]) => value !== "").map(([key, value]) => [key, ["cutSeconds", "replacePercent"].includes(key) ? Number(value) : value])));
         preparationLog(`CSV 检查通过：${rows.length} 组素材。`);
       } else {
         const scan = await scanMaterials(defaults, fingerprint);

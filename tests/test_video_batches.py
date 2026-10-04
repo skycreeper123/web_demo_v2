@@ -431,6 +431,52 @@ class VideoBatchTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             batches.create_batch(payload)
 
+    def test_row_timing_mode_precedence_and_blank_inheritance(self):
+        payload = self.payload(7, mode="prefix", cutMode="percent", replacePercent=25, cutSeconds=4)
+        overrides = [{}, {"replacePercent": 40}, {"cutSeconds": 3},
+                     {"cutMode": "seconds", "replacePercent": 80, "cutSeconds": 5},
+                     {"cutMode": "percent", "replacePercent": 20, "cutSeconds": 6},
+                     {"cutMode": " ", "replacePercent": None, "cutSeconds": "\t"},
+                     {"replacePercent": 30, "cutSeconds": 2}]
+        for row, timing in zip(payload["rows"], overrides):
+            row.update(timing)
+        batch = batches.create_batch(payload)
+        expected = [("percent", 25, None), ("percent", 40, None), ("seconds", None, 3),
+                    ("seconds", None, 5), ("percent", 20, None), ("percent", 25, None),
+                    ("percent", 30, None)]
+        for row, timing in zip(batch["rows"], expected):
+            inputs = flows.get_flow(row["flowId"])["inputs"]
+            self.assertEqual((inputs["cutMode"], inputs["replacePercent"], inputs["cutSeconds"]), timing)
+        # A percentage cell also overrides older defaults that only have seconds.
+        legacy = self.payload(1, mode="prefix", cutSeconds=4)
+        legacy["rows"][0]["replacePercent"] = 35
+        created = batches.create_batch(legacy)
+        child = flows.get_flow(created["rows"][0]["flowId"])
+        self.assertEqual(child["inputs"]["cutMode"], "percent")
+        self.assertEqual(child["inputs"]["replacePercent"], 35)
+
+    def test_shared_percent_resolves_each_video_duration_independently(self):
+        payload = self.payload(2, mode="prefix", cutMode="percent", replacePercent=30)
+        durations = {Path(row["videoPath"]): duration for row, duration in zip(payload["rows"], (8, 20))}
+        batch = batches.create_batch(payload)
+        with patch.object(flows, "probe_video", side_effect=lambda path: {"duration": durations[path], "fps": 30}):
+            self.run_batch(batch)
+        self.assertEqual(batches.get_batch(batch["id"])["completed"], 2)
+        cuts = [flows.get_flow(row["flowId"])["inputs"]["cutSeconds"] for row in batch["rows"]]
+        self.assertEqual(cuts, [2.4, 6])
+        logs = "\n".join(batches.read_logs(batch["id"]))
+        self.assertIn("30%", logs)
+        self.assertIn("切点 2.4 秒", logs)
+        self.assertIn("切点 6 秒", logs)
+
+    def test_invalid_percentage_last_row_leaves_no_partial_batch(self):
+        payload = self.payload(2, mode="prefix", cutMode="percent", replacePercent=25)
+        payload["rows"][-1]["replacePercent"] = 0
+        with self.assertRaisesRegex(ValueError, "第 2 组.*替换比例"):
+            batches.create_batch(payload)
+        self.assertEqual(list((self.root / "flows").glob("*/flow.json")), [])
+        self.assertEqual(list((self.root / "batches").glob("*/batch.json")), [])
+
     def test_failed_frame_rate_validation_retries_only_export_for_every_group(self):
         batch = self.create(2)
 

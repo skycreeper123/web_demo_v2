@@ -26,7 +26,8 @@ BATCH_ROOT = project_root() / "output" / "video_batches"
 _LOCK = threading.RLock()
 _ACTIVE: set[str] = set()
 _ID = re.compile(r"^[a-f0-9]{16}$")
-_ROW_FIELDS = {"name", "videoPath", "referenceImagePath", "referenceAlt1Path", "referenceAlt2Path", "startImagePath", "endImagePath", "cutSeconds", "editInstruction"}
+_ROW_FIELDS = {"name", "videoPath", "referenceImagePath", "referenceAlt1Path", "referenceAlt2Path", "startImagePath", "endImagePath",
+               "cutMode", "replacePercent", "cutSeconds", "editInstruction"}
 _DEFAULT_FIELDS = _ROW_FIELDS | {"mode", "temporalMode", "spatialTarget", "promptSource", "keepAudio"}
 
 
@@ -172,10 +173,15 @@ def create_batch(payload: dict[str, Any]) -> dict[str, Any]:
     recipes = []
     for index, row in enumerate(rows, 1):
         if not isinstance(row, dict) or set(row) - _ROW_FIELDS:
-            raise ValueError(f"第 {index} 组只能覆盖素材路径、切点、编辑要求和名称；流程类型由默认配置统一指定。")
+            raise ValueError(f"第 {index} 组只能覆盖素材路径、替换比例或切点、编辑要求和名称；流程类型由默认配置统一指定。")
         try:
             overrides = {key: value for key, value in row.items()
                          if value is not None and not (isinstance(value, str) and not value.strip())}
+            if "cutMode" not in overrides:
+                if "replacePercent" in overrides:
+                    overrides["cutMode"] = "percent"
+                elif "cutSeconds" in overrides:
+                    overrides["cutMode"] = "seconds"
             flow = flows.build_flow({**defaults, **overrides})
         except (ValueError, TypeError, OSError) as exc:
             raise ValueError(f"第 {index} 组：{exc}") from exc

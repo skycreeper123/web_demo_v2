@@ -52,6 +52,7 @@
     const spatial = ["spatial", "mixed"].includes(mode);
     const timed = mode !== "spatial";
     const batch = batchInput();
+    const percent = $("flowCutMode").value === "percent";
     $("flowVideoField").hidden = false;
     $("flowVideoPath").required = !batch;
     $("flowSpatialField").hidden = !spatial;
@@ -62,13 +63,22 @@
     $("flowEndField").hidden = !timed || temporal !== "suffix";
     $("flowEndPath").required = timed && temporal === "suffix" && !batch;
     $("flowCutField").hidden = !timed;
-    $("flowCutSeconds").required = timed && !batch;
-    $("flowCutSeconds").disabled = !timed;
-    $("flowCutSeconds").min = batch ? "" : "0.001";
+    $("flowCutMode").disabled = !timed;
+    $("flowPercentField").hidden = !timed || !percent;
+    $("flowSecondsField").hidden = !timed || percent;
+    $("flowReplacePercent").required = timed && percent && !batch;
+    $("flowReplacePercent").disabled = !timed || !percent;
+    $("flowReplacePercent").min = batch ? "" : "0";
+    $("flowReplacePercent").max = batch ? "" : "100";
+    $("flowCutSeconds").required = timed && !percent && !batch;
+    $("flowCutSeconds").disabled = !timed || percent;
+    $("flowCutSeconds").min = batch ? "" : "0";
+    $("flowPercentLabel").textContent = `替换${temporal === "suffix" ? "后" : "前"}段比例（%）`;
+    $("flowPercentHint").textContent = `例如 30 表示替换${temporal === "suffix" ? "最后" : "最前"} 30%，保留其余 70%。比例须大于 0、小于 100；每条视频按自身时长计算。`;
     const sequence = [];
     if (spatial) sequence.push($("flowSpatialTarget").value === "background" ? "替换背景" : "替换前景");
     if (timed) {
-      sequence.push("按切点拆分与取帧");
+      sequence.push(percent ? "按比例拆分与取帧" : "按切点拆分与取帧");
       if (temporal === "prefix") sequence.push($("flowStartPath").value.trim() ? "使用新首图" : "生成新首图");
       sequence.push("首尾双图生成", temporal === "prefix" ? "接回保留后段" : "接回保留前段");
     }
@@ -123,7 +133,10 @@
       const url = item.url || inputs[`${key}Url`] || inputs[key.replace("Path", "Url")] || artifact?.url;
       return [mediaCard({name, kind, ...item, url})];
     });
-    const notes = [inputs.cutSeconds != null && flow.mode !== "spatial" ? `切点：${inputs.cutSeconds} 秒` : "", `声音：${inputs.keepAudio === false ? "不保留" : "保留原视频声音"}`, `提示词：${inputs.promptSource === "manual" ? "手动填写" : "自动生成"}`].filter(Boolean);
+    const timing = flow.mode === "spatial" ? "" : inputs.cutMode === "percent"
+      ? `替换${(flow.mode === "mixed" ? inputs.temporalMode : flow.mode) === "suffix" ? "后" : "前"} ${inputs.replacePercent}%${inputs.cutSeconds != null && Number.isFinite(Number(inputs.cutSeconds)) ? ` · 已解析切点：${Number(Number(inputs.cutSeconds).toFixed(3))} 秒` : ""}`
+      : inputs.cutSeconds != null ? `切点：${inputs.cutSeconds} 秒` : "";
+    const notes = [timing, `声音：${inputs.keepAudio === false ? "不保留" : "保留原视频声音"}`, `提示词：${inputs.promptSource === "manual" ? "手动填写" : "自动生成"}`].filter(Boolean);
     $("flowInputSummary").innerHTML = `<p class="panel-note">${html(notes.join(" · "))}</p>${inputs.editInstruction ? `<p class="flow-input-instruction">${html(inputs.editInstruction)}</p>` : ""}<div class="flow-output-grid">${cards.join("")}</div>`;
   }
   function stepCanRun(step, flow) {
@@ -190,7 +203,12 @@
     const current = steps.find(step => step.status === "running") || steps.find(step => step.status !== "completed");
     $("flowProgress").style.width = `${steps.length ? completed * 100 / steps.length : 0}%`;
     $("flowProgressText").textContent = `已完成 ${completed} / ${steps.length} 步${current ? ` · ${current.status === "running" ? "正在" : "接下来"}：${current.title}` : ""}`;
-    if (changed) { $("flowSteps").replaceChildren(); renderInputs(flow); $("flowLogs").textContent = "执行后显示运行日志。"; }
+    if (changed) { $("flowSteps").replaceChildren(); $("flowLogs").textContent = "执行后显示运行日志。"; }
+    const inputSignature = JSON.stringify([flow.id, flow.mode, inputs]);
+    if (changed || $("flowInputSummary").dataset.signature !== inputSignature) {
+      renderInputs(flow);
+      $("flowInputSummary").dataset.signature = inputSignature;
+    }
     for (const [index, step] of steps.entries()) {
       let card = [...$("flowSteps").children].find(node => node.dataset.stepId === step.id);
       const signature = JSON.stringify(step);
@@ -331,14 +349,15 @@
   function createDefaults() {
     const mode = $("flowMode").value;
     const timed = mode !== "spatial";
-    const cutSeconds = Number($("flowCutSeconds").value);
+    const cutMode = $("flowCutMode").value;
     return {
       name: $("flowName").value.trim(), mode, temporalMode: $("flowTemporalMode").value,
       spatialTarget: $("flowSpatialTarget").value, videoPath: $("flowVideoPath").value.trim(),
       referenceImagePath: ["spatial", "mixed"].includes(mode) ? $("flowReferencePath").value.trim() : "",
       startImagePath: timed && temporalMode() === "prefix" ? $("flowStartPath").value.trim() : "",
       endImagePath: timed && temporalMode() === "suffix" ? $("flowEndPath").value.trim() : "",
-      cutSeconds: timed && $("flowCutSeconds").value.trim() ? cutSeconds : null, editInstruction: $("flowInstruction").value.trim(),
+      cutMode, replacePercent: timed && cutMode === "percent" && $("flowReplacePercent").value.trim() ? Number($("flowReplacePercent").value) : null,
+      cutSeconds: timed && cutMode === "seconds" && $("flowCutSeconds").value.trim() ? Number($("flowCutSeconds").value) : null, editInstruction: $("flowInstruction").value.trim(),
       keepAudio: $("flowKeepAudio").checked, promptSource: $("flowPromptSource").value,
     };
   }
@@ -347,7 +366,11 @@
     if (batchInput()) return;
     if (flowState.uploads || flowState.busy) { notice("请等待素材上传完成。", true); return; }
     const payload = createDefaults();
-    if (payload.mode !== "spatial" && (!Number.isFinite(payload.cutSeconds) || payload.cutSeconds <= 0)) { notice("请填写大于 0 的切点秒数。", true); return; }
+    if (payload.mode !== "spatial") {
+      if (!["percent", "seconds"].includes(payload.cutMode)) { notice("请选择按比例或按秒设置替换范围。", true); return; }
+      if (payload.cutMode === "percent" && (!Number.isFinite(payload.replacePercent) || payload.replacePercent <= 0 || payload.replacePercent >= 100)) { notice("替换比例须大于 0、小于 100。", true); return; }
+      if (payload.cutMode === "seconds" && (!Number.isFinite(payload.cutSeconds) || payload.cutSeconds <= 0)) { notice("请填写大于 0 的切点秒数。", true); return; }
+    }
     $("flowCreateBtn").disabled = true;
     notice();
     try {
@@ -392,7 +415,7 @@
   }
 
   $("flowCreateForm").addEventListener("submit", createFlow);
-  ["flowInputMode", "flowMode", "flowTemporalMode", "flowSpatialTarget", "flowPromptSource"].forEach(id => $(id).addEventListener("change", updateCreateFields));
+  ["flowInputMode", "flowMode", "flowTemporalMode", "flowSpatialTarget", "flowPromptSource", "flowCutMode"].forEach(id => $(id).addEventListener("change", updateCreateFields));
   $("flowStartPath").addEventListener("input", updateCreateFields);
   document.querySelectorAll("[data-flow-upload]").forEach(input => input.addEventListener("change", () => upload(input)));
   ["flowVideoPath", "flowReferencePath", "flowStartPath", "flowEndPath"].forEach(id => $(id).addEventListener("input", () => {
