@@ -36,7 +36,7 @@ class WorkflowInputTests(unittest.TestCase):
         self.assertTrue(fields["image_ref"]["required"])
         self.assertTrue(fields["video_ref"]["required"])
         self.assertEqual(fields["params.node_27.steps"]["default"], "5")
-        self.assertEqual(fields["params.node_222.value"]["default"], "832")
+        self.assertEqual(fields["params.node_222.value"]["default"], "1920")
         self.assertEqual(fields["params.node_27.cfg"]["type"], "float")
         self.assertNotIn("params.node_27.model", fields)
         self.assertFalse(any("hiddenJson" in k for k in fields))

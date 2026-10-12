@@ -34,6 +34,9 @@ from web_demo.backend.app.services.comfyui_comm.workflow_binder import resolve_t
 from web_demo.backend.app.services.video_flow_media import (
     assemble_video, finalize_spatial, prepare_temporal, probe_video,
 )
+from web_demo.backend.app.services.video_output_profile import (
+    VIDEO_FPS, generation_dimensions, generation_frames, output_video_meta,
+)
 
 FLOW_KIND = "video_flow"
 FLOW_ROOT = project_root() / "output" / "video_flows"
@@ -239,7 +242,7 @@ def build_flow(payload: dict[str, Any]) -> dict[str, Any]:
         spatial_media = ["source_video", "reference_image"]
         spatial_media.extend(key for key in ("reference_alt_1", "reference_alt_2") if key in flow["artifacts"])
         prompt("spatial_prompt", "生成空间替换提示词", instruction, spatial_media, "video")
-        add("spatial_render", "生成空间替换视频", "comfy", "Wan 视频编辑 V5；按所选范围设置遮罩，并读取完整视频。",
+        add("spatial_render", "生成空间替换视频", "comfy", "Wan 视频编辑 V5；使用 1080p / 30 fps 规格，按所选范围设置遮罩，并读取完整视频。",
             role="spatial", promptStep="spatial_prompt", outputKey="spatial_video")
     if is_temporal:
         add("prepare", "裁切并提取衔接帧", "media", "按切点保留原片段，提取实际保留片段的边界帧。",
@@ -254,11 +257,11 @@ def build_flow(payload: dict[str, Any]) -> dict[str, Any]:
         prompt("motion_prompt", "生成首尾帧过渡提示词",
                "按输入的第一张首图到第二张尾图生成连续视频。准确描述起始状态、结束状态和两者之间的动作过渡，保留主体身份与镜头连贯性；在尾帧处自然衔接，避免突然切镜或多余动作。",
                motion_media, "image")
-        add("motion_render", "双图生成替换片段", "comfy", "首图和尾图分别投递；生成长度按被替换片段计算。",
+        add("motion_render", "双图生成替换片段", "comfy", "首图和尾图分别投递；使用 1080p / 30 fps 规格，生成长度按被替换片段计算。",
             role="motion", promptStep="motion_prompt", outputKey="replacement_video")
-        add("assemble", "拼接并导出成片", "assemble", "按替换方向拼接、统一原片尺寸和帧率，并按设置恢复原音轨。")
+        add("assemble", "拼接并导出成片", "assemble", "按替换方向拼接，保留画幅比例和原片时长，统一导出 1080p / 30 fps，并按设置恢复原音轨。")
     else:
-        add("finish", "导出空间替换成片", "assemble", "使用纯生成输出，匹配原片尺寸、时长和帧率，并按设置恢复原音轨。")
+        add("finish", "导出空间替换成片", "assemble", "使用纯生成输出，保留画幅比例和原片时长，统一导出 1080p / 30 fps，并按设置恢复原音轨。")
     return flow
 
 
@@ -530,11 +533,21 @@ def _run_comfy(flow: dict[str, Any], step: dict[str, Any], directory: Path, job_
     prompt_settings = _step(flow, settings["promptStep"])["settings"]
     form: dict[str, Any] = {"positive_prompt": prompt_settings["prompt"], "negative_prompt": prompt_settings.get("negativePrompt", "")}
     expected: dict[str, Any] = {}
+    if role in {"spatial", "motion"}:
+        source_meta = probe_video(_path(flow, "source_video"))
+        width, height = generation_dimensions(source_meta)
+        target_meta = output_video_meta(source_meta)
+        log(f"视频规格：生成 {width}×{height} / {VIDEO_FPS} fps，"
+            f"导出 {target_meta['width']}×{target_meta['height']} / {VIDEO_FPS} fps。")
     if role == "spatial":
         form.update(image_ref=str(_path(flow, "reference_image")), video_ref=str(_path(flow, "source_video")))
         expected = {"params.node_1437.invert_output": flow["inputs"]["spatialTarget"] == "background",
                     "params.node_1412.frame_load_cap": 0, "params.node_1412.skip_first_frames": 0,
-                    "params.node_1412.force_rate": 16}
+                    "params.node_1412.force_rate": VIDEO_FPS,
+                    "params.node_1420.width": width, "params.node_1420.height": height,
+                    "params.node_1420.keep_proportion": "stretch",
+                    "params.node_1440.width": target_meta["width"],
+                    "params.node_1440.height": target_meta["height"]}
     elif role == "first_image":
         form["image_ref"] = str(_path(flow, "original_first_frame"))
     else:
@@ -542,8 +555,12 @@ def _run_comfy(flow: dict[str, Any], step: dict[str, Any], directory: Path, job_
         form.update(start_image_ref=str(_path(flow, "start_image" if prefix else "boundary_frame")),
                     end_image_ref=str(_path(flow, "boundary_frame" if prefix else "target_end")))
         duration = float(flow["media"]["replacement_duration"])
-        frames = max(5, math.ceil((duration * 16 - 1) / 4) * 4 + 1)
-        expected = {"params.node_162.value": frames, "params.node_145.frame_rate": 16}
+        frames = generation_frames(duration)
+        expected = {"params.node_162.value": frames, "params.node_145.frame_rate": VIDEO_FPS,
+                    "params.node_160.value": width, "params.node_161.value": height,
+                    "params.node_223.keep_proportion": "pad_edge_pixel",
+                    "params.node_246.width": target_meta["width"],
+                    "params.node_246.height": target_meta["height"]}
     # Fixed production recipes fail clearly if their graph was replaced or changed.
     resolved = resolve_template_payload({"templateKey": template["key"]}, load_comfy_config())
     missing = set(expected) - set(resolved["bindings"])

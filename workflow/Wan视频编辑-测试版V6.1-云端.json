@@ -192,12 +192,9 @@
         "222",
         0
       ],
-      "height": [
-        "222",
-        0
-      ],
+      "height": 1088,
       "upscale_method": "nearest-exact",
-      "keep_proportion": true,
+      "keep_proportion": false,
       "divisible_by": 32,
       "crop": 0,
       "image": [
@@ -207,7 +204,7 @@
     },
     "class_type": "ImageResizeKJ",
     "_meta": {
-      "title": "Resize Image (deprecated)"
+      "title": "生成尺寸（宽高需为32的倍数）"
     }
   },
   "207": {
@@ -250,11 +247,11 @@
   },
   "222": {
     "inputs": {
-      "value": 832
+      "value": 1920
     },
     "class_type": "easy int",
     "_meta": {
-      "title": "视频分辨率"
+      "title": "生成宽度（32的倍数）"
     }
   },
   "223": {
@@ -273,7 +270,7 @@
       "pingpong": false,
       "save_output": false,
       "images": [
-        "1084",
+        "1115",
         0
       ]
     },
@@ -301,7 +298,7 @@
       "pingpong": false,
       "save_output": true,
       "images": [
-        "42",
+        "1113",
         0
       ],
       "audio": [
@@ -333,7 +330,7 @@
       "pingpong": false,
       "save_output": true,
       "images": [
-        "66",
+        "1114",
         0
       ],
       "audio": [
@@ -367,7 +364,7 @@
   "237": {
     "inputs": {
       "video": "多人-4人替换.mp4",
-      "force_rate": 24,
+      "force_rate": 30,
       "custom_width": 0,
       "custom_height": 0,
       "frame_load_cap": 0,
@@ -938,6 +935,66 @@
     "class_type": "ashuo_lock",
     "_meta": {
       "title": "ashuo_lock"
+    }
+  },
+  "1113": {
+    "inputs": {
+      "width": 1920,
+      "height": 1080,
+      "upscale_method": "lanczos",
+      "keep_proportion": "stretch",
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "divisible_by": 2,
+      "device": "cpu",
+      "image": [
+        "42",
+        0
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "成片输出尺寸（1080p）"
+    }
+  },
+  "1114": {
+    "inputs": {
+      "width": 1920,
+      "height": 1080,
+      "upscale_method": "lanczos",
+      "keep_proportion": "pad",
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "divisible_by": 2,
+      "device": "cpu",
+      "image": [
+        "66",
+        0
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "对比视频输出尺寸（1080p）"
+    }
+  },
+  "1115": {
+    "inputs": {
+      "width": 1920,
+      "height": 1080,
+      "upscale_method": "lanczos",
+      "keep_proportion": "stretch",
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "divisible_by": 2,
+      "device": "cpu",
+      "image": [
+        "1084",
+        0
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "姿势预览输出尺寸（1080p）"
     }
   }
 }

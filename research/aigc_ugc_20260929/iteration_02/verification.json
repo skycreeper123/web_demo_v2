@@ -1,0 +1,58 @@
+{
+  "checked_on": "2026-09-29",
+  "new_json_count": 6,
+  "total_reference_json_count": 24,
+  "ui_count": 4,
+  "api_count": 2,
+  "gpu_executed": false,
+  "video_frame_review_completed": false,
+  "files": [
+    {
+      "file": "reference_workflows/Lewis-Stuart-11/f5_tts.json",
+      "format": "api",
+      "json_valid": true,
+      "delivery_hash_matches": true,
+      "unchanged_from_source": false
+    },
+    {
+      "file": "reference_workflows/Lewis-Stuart-11/latentsync_with_frame_interpolation.json",
+      "format": "api",
+      "json_valid": true,
+      "delivery_hash_matches": true,
+      "unchanged_from_source": true
+    },
+    {
+      "file": "reference_workflows/stuttlepress/Lightweight VACE Clip Joiner v1.0.4.json",
+      "format": "ui",
+      "json_valid": true,
+      "delivery_hash_matches": true,
+      "unchanged_from_source": true
+    },
+    {
+      "file": "reference_workflows/stuttlepress/VACE Clip Joiner v2.5.json",
+      "format": "ui",
+      "json_valid": true,
+      "delivery_hash_matches": true,
+      "unchanged_from_source": true
+    },
+    {
+      "file": "reference_workflows/kijai/wanvideo_1_3B_UniLumos_relight_example_01.json",
+      "format": "ui",
+      "json_valid": true,
+      "delivery_hash_matches": true,
+      "unchanged_from_source": true
+    },
+    {
+      "file": "reference_workflows/drozbay/droz_WanVaceAdvanced_VaceContextWindows_1.0.json",
+      "format": "ui",
+      "json_valid": true,
+      "delivery_hash_matches": true,
+      "unchanged_from_source": true
+    }
+  ],
+  "all_24_reference_hashes_checked": true,
+  "case_cards": 11,
+  "markdown_local_links_checked": true,
+  "missing_local_links": [],
+  "new_source_commits_confirmed": 4
+}

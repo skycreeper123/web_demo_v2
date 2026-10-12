@@ -1,0 +1,68 @@
+{
+  "23": {
+    "inputs": {
+      "sample_text": [
+        "24",
+        0
+      ],
+      "speech": [
+        "32",
+        0
+      ],
+      "seed": 347,
+      "model": "F5",
+      "vocoder": "vocos",
+      "speed": 1,
+      "sample_audio": [
+        "36",
+        0
+      ]
+    },
+    "class_type": "F5TTSAudioInputs",
+    "_meta": {
+      "title": "F5-TTS Audio from inputs"
+    }
+  },
+  "24": {
+    "inputs": {
+      "text": "This is a short sample of my voice recorded in a quiet room."
+    },
+    "class_type": "Textbox",
+    "_meta": {
+      "title": "Sample Text to Record"
+    }
+  },
+  "32": {
+    "inputs": {
+      "text": "Today we are testing a short video made from real footage and an artificial background."
+    },
+    "class_type": "Textbox",
+    "_meta": {
+      "title": "Text to Read"
+    }
+  },
+  "36": {
+    "inputs": {
+      "audio": "reference_voice.wav",
+      "audioUI": ""
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "LoadAudio"
+    }
+  },
+  "37": {
+    "inputs": {
+      "filename_prefix": "research/voice",
+      "audioUI": "",
+      "audio": [
+        "23",
+        0
+      ]
+    },
+    "class_type": "SaveAudio",
+    "_meta": {
+      "title": "SaveAudio"
+    }
+  }
+}

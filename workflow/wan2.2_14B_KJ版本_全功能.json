@@ -170,7 +170,7 @@
   },
   "145": {
     "inputs": {
-      "frame_rate": 16,
+      "frame_rate": 30,
       "loop_count": 0,
       "filename_prefix": [
         "113",
@@ -184,7 +184,7 @@
       "pingpong": false,
       "save_output": true,
       "images": [
-        "143",
+        "246",
         0
       ]
     },
@@ -239,29 +239,29 @@
   },
   "160": {
     "inputs": {
-      "value": 853
+      "value": 1920
     },
     "class_type": "easy int",
     "_meta": {
-      "title": "宽度"
+      "title": "生成宽度（16的倍数）"
     }
   },
   "161": {
     "inputs": {
-      "value": 480
+      "value": 1088
     },
     "class_type": "easy int",
     "_meta": {
-      "title": "高度"
+      "title": "生成高度（16的倍数）"
     }
   },
   "162": {
     "inputs": {
-      "value": 64
+      "value": 121
     },
     "class_type": "easy int",
     "_meta": {
-      "title": "生成视频的时长（帧）"
+      "title": "生成帧数（30fps，121帧约4秒）"
     }
   },
   "163": {
@@ -443,7 +443,7 @@
         0
       ],
       "upscale_method": "lanczos",
-      "keep_proportion": "resize",
+      "keep_proportion": "pad_edge_pixel",
       "pad_color": "0, 0, 0",
       "crop_position": "center",
       "divisible_by": 16,
@@ -630,6 +630,26 @@
     "class_type": "AILab_QwenVL_Advanced",
     "_meta": {
       "title": "QwenVL (Advanced)"
+    }
+  },
+  "246": {
+    "inputs": {
+      "width": 1920,
+      "height": 1080,
+      "upscale_method": "lanczos",
+      "keep_proportion": "stretch",
+      "pad_color": "0, 0, 0",
+      "crop_position": "center",
+      "divisible_by": 2,
+      "device": "cpu",
+      "image": [
+        "143",
+        0
+      ]
+    },
+    "class_type": "ImageResizeKJv2",
+    "_meta": {
+      "title": "成片输出尺寸（1080p）"
     }
   }
 }

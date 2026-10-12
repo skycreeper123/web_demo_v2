@@ -15,6 +15,7 @@ from typing import Any
 from uuid import uuid4
 
 from .video_clip_service import _get_ffmpeg_executable, _require_cv2
+from .video_output_profile import output_video_meta
 
 
 def _source_file(value: Path) -> Path:
@@ -60,8 +61,8 @@ def _frame_rate(meta: dict[str, Any]) -> Fraction:
     fps = float(meta["fps"])
     if not math.isfinite(fps) or fps <= 0:
         raise ValueError("视频帧率必须是大于 0 的有效数值。")
-    # Preserve rates such as 30000/1001 and 1197/40 (29.925), rather than
-    # rounding all near-30 inputs to 30. The same rate drives every stage.
+    # Retained intermediates preserve source rates such as 30000/1001.
+    # Final exports pass the explicit output profile instead.
     return Fraction(str(fps)).limit_denominator(1_000_000)
 
 
@@ -128,7 +129,8 @@ def _run_ffmpeg(arguments: list[str], *, duration: float, action: str) -> None:
 
 
 def _video_encoding(meta: dict[str, Any]) -> list[str]:
-    # yuv444p keeps unusual odd source dimensions without silently changing them.
+    # Retained intermediates can keep unusual odd source dimensions with yuv444p.
+    # Final output dimensions are even and therefore consistently use yuv420p.
     pixel_format = "yuv420p" if int(meta["width"]) % 2 == 0 and int(meta["height"]) % 2 == 0 else "yuv444p"
     rate = _frame_rate(meta)
     # FPS in a filter alone does not explicitly constrain the encoder/muxer.
@@ -223,11 +225,11 @@ def prepare_temporal(
 
 
 def _normalized_filter(
-    input_meta: dict[str, Any], source_meta: dict[str, Any], duration: float, *, stretch: bool,
+    input_meta: dict[str, Any], target_meta: dict[str, Any], duration: float, *, stretch: bool,
     stretch_geometry: bool = False,
 ) -> str:
     factor = duration / float(input_meta["duration"]) if stretch else 1.0
-    width, height = int(source_meta["width"]), int(source_meta["height"])
+    width, height = int(target_meta["width"]), int(target_meta["height"])
     geometry = (
         f"scale={width}:{height},setsar=1,"
         if stretch_geometry else
@@ -237,7 +239,7 @@ def _normalized_filter(
     return (
         f"setpts=(PTS-STARTPTS)*{_number(factor)},"
         f"{geometry}"
-        f"fps={_fps_argument(source_meta)},"
+        f"format=yuv420p,fps={_fps_argument(target_meta)},"
         f"tpad=stop_mode=clone:stop_duration={_number(duration)},"
         f"trim=duration={_number(duration)},setpts=PTS-STARTPTS"
     )
@@ -253,6 +255,7 @@ def _render_final(
 ) -> dict[str, Any]:
     output = _checked_output(output, [*inputs, source])
     temporary = _temporary_path(output)
+    target_meta = output_video_meta(source_meta)
     duration = float(source_meta["duration"])
     arguments: list[str] = []
     for input_path in [*inputs, source]:
@@ -264,21 +267,22 @@ def _render_final(
         arguments.extend(["-map", f"{len(inputs)}:a?", "-c:a", "aac", "-b:a", "192k"])
     else:
         arguments.append("-an")
-    arguments.extend(["-t", _number(duration), *_video_encoding(source_meta), str(temporary)])
+    arguments.extend(["-t", _number(duration), *_video_encoding(target_meta), str(temporary)])
     try:
         _run_ffmpeg(arguments, duration=duration, action="合成替换视频")
         result_meta = probe_video(temporary)
-        target_fps = float(_frame_rate(source_meta))
+        target_fps = float(_frame_rate(target_meta))
+        target_frames = int(target_meta["frames"])
         actual_fps = float(result_meta["fps"])
         fps_difference = abs(actual_fps - target_fps)
         details = (f"目标帧率 {target_fps:.9g} fps，实际 {actual_fps:.9g} fps；"
-                   f"原片 {source_meta['frames']} 帧，成片 {result_meta['frames']} 帧；"
+                   f"原片 {source_meta['frames']} 帧，目标 {target_frames} 帧，成片 {result_meta['frames']} 帧；"
                    f"目标时长 {duration:.9g} 秒，实际 {result_meta['duration']:.9g} 秒")
         tolerance = max(2 / target_fps, 0.075)
         if abs(float(result_meta["duration"]) - duration) > tolerance:
             raise RuntimeError(f"合成视频时长与原视频不一致：{details}。")
-        if (result_meta["width"], result_meta["height"]) != (source_meta["width"], source_meta["height"]):
-            raise RuntimeError(f"合成视频尺寸与原视频不一致：目标 {source_meta['width']}×{source_meta['height']}，"
+        if (result_meta["width"], result_meta["height"]) != (target_meta["width"], target_meta["height"]):
+            raise RuntimeError(f"合成视频尺寸与输出设置不一致：目标 {target_meta['width']}×{target_meta['height']}，"
                                f"实际 {result_meta['width']}×{result_meta['height']}；{details}。")
         # OpenCV/container average FPS may differ because of a final sample's
         # duration. Accept only a small (<1%) discrepancy accumulating to at
@@ -286,16 +290,18 @@ def _render_final(
         frame_rounding_only = (
             fps_difference <= target_fps * 0.01
             and fps_difference * duration <= 1 + 1e-6
-            and abs(int(result_meta["frames"]) - round(duration * target_fps)) <= 1
+            and abs(int(result_meta["frames"]) - target_frames) <= 1
         )
-        if not math.isclose(actual_fps, target_fps, rel_tol=0.001, abs_tol=0.001) and not frame_rounding_only:
-            raise RuntimeError(f"合成视频帧率与原视频不一致：{details}。")
+        if (abs(int(result_meta["frames"]) - target_frames) > 1
+                or (not math.isclose(actual_fps, target_fps, rel_tol=0.001, abs_tol=0.001)
+                    and not frame_rounding_only)):
+            raise RuntimeError(f"合成视频帧数或帧率与输出设置不一致：{details}。")
         temporary.replace(output)
     finally:
         temporary.unlink(missing_ok=True)
     return {"path": str(output), "output_video": str(output), **result_meta,
-            "source_duration": duration, "source_fps": target_fps,
-            "fps_rational": _fps_argument(source_meta), "keep_audio": bool(keep_audio)}
+            "source_duration": duration, "source_fps": float(source_meta["fps"]),
+            "fps_rational": _fps_argument(target_meta), "keep_audio": bool(keep_audio)}
 
 
 def assemble_video(
@@ -310,20 +316,21 @@ def assemble_video(
     """Join a generated replacement with retained footage on the source timeline."""
     retained, generated, source = (_source_file(path) for path in (retained, generated, source))
     source_meta = probe_video(source)
+    target_meta = output_video_meta(source_meta)
     retained_meta, generated_meta = probe_video(retained), probe_video(generated)
     cut, retained_duration, replacement_duration = _timeline(source_meta, direction, cut_seconds)
     tolerance = max(2 / float(source_meta["fps"]), 2 / float(retained_meta["fps"]), 0.10)
     if abs(float(retained_meta["duration"]) - retained_duration) > tolerance:
         raise ValueError("保留片段时长与原视频切点不一致，请重新裁切保留片段。")
-    retained_filter = _normalized_filter(retained_meta, source_meta, retained_duration, stretch=False)
-    generated_filter = _normalized_filter(generated_meta, source_meta, replacement_duration, stretch=True)
+    retained_filter = _normalized_filter(retained_meta, target_meta, retained_duration, stretch=False)
+    generated_filter = _normalized_filter(generated_meta, target_meta, replacement_duration, stretch=True)
     order = "[generated][retained]" if direction == "prefix" else "[retained][generated]"
     graph = (
         f"[0:v:0]{retained_filter}[retained];"
         f"[1:v:0]{generated_filter}[generated];"
         f"{order}concat=n=2:v=1:a=0,"
-        f"fps={_fps_argument(source_meta)},"
-        f"tpad=stop_mode=clone:stop_duration={_number(2 / float(source_meta['fps']))},"
+        f"fps={_fps_argument(target_meta)},"
+        f"tpad=stop_mode=clone:stop_duration={_number(2 / float(target_meta['fps']))},"
         f"trim=duration={_number(source_meta['duration'])},setpts=PTS-STARTPTS[video]"
     )
     result = _render_final([retained, generated], source, output, source_meta, graph, keep_audio)
@@ -336,15 +343,15 @@ def finalize_spatial(
     output: Path,
     keep_audio: bool = True,
 ) -> dict[str, Any]:
-    """Restore source geometry, frame rate, duration and optional original audio."""
+    """Export the 1080p/30fps profile with the source timeline and optional audio."""
     generated, source = (_source_file(path) for path in (generated, source))
     source_meta, generated_meta = probe_video(source), probe_video(generated)
-    # The fixed V5 graph resizes source frames directly to a square. Undo that
-    # nonuniform resize here; fitting the square would preserve distortion and
-    # add black bars. Temporal replacement still uses aspect-preserving fitting.
+    target_meta = output_video_meta(source_meta)
+    # The model aligns dimensions to its spatial grid. Scale back to the source
+    # aspect ratio at the output size so alignment does not introduce black bars.
     graph = (
         "[0:v:0]"
-        + _normalized_filter(generated_meta, source_meta, float(source_meta["duration"]),
+        + _normalized_filter(generated_meta, target_meta, float(source_meta["duration"]),
                              stretch=True, stretch_geometry=True)
         + "[video]"
     )

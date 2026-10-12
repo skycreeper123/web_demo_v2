@@ -1,0 +1,44 @@
+[
+  {
+    "repo": "Lewis-Stuart-11/MikeBot",
+    "branch": "main",
+    "commit": "182b1d1a3d7bcb7746c14ab3d0d357623481bef8",
+    "tree": "fc782f0b2568d0b2ed5ce4210d3ce1e6596ce90c",
+    "paths": [
+      "workflows/audio/f5_tts.json",
+      "workflows/video/latentsync_with_frame_interpolation.json"
+    ],
+    "commit_confirmed_via_github_commits_api": true
+  },
+  {
+    "repo": "stuttlepress/ComfyUI-Wan-VACE-Video-Joiner",
+    "branch": "main",
+    "commit": "ae7445578e209ed54234c5f4caba57d2012e413a",
+    "tree": "1956fa507ab083f83ef22a80067d8c97a498fb11",
+    "paths": [
+      "Lightweight VACE Clip Joiner v1.0.4.json",
+      "VACE Clip Joiner v2.5.json"
+    ],
+    "commit_confirmed_via_github_commits_api": true
+  },
+  {
+    "repo": "kijai/ComfyUI-WanVideoWrapper",
+    "branch": "main",
+    "commit": "088128b224242e110d3906c6750e9a3a348a659b",
+    "tree": "f3e0aea21b1483ab6339c1009403122b2509131f",
+    "paths": [
+      "example_workflows/wanvideo_1_3B_UniLumos_relight_example_01.json"
+    ],
+    "commit_confirmed_via_github_commits_api": true
+  },
+  {
+    "repo": "drozbay/ComfyUI-WanVaceAdvanced",
+    "branch": "master",
+    "commit": "83035b68bf771527c6d1b8ae3fab734e06dcef51",
+    "tree": "56f0389fdb0b4ab923f38b7ff300891185e81a6c",
+    "paths": [
+      "example_workflows/droz_WanVaceAdvanced_VaceContextWindows_1.0.json"
+    ],
+    "commit_confirmed_via_github_commits_api": true
+  }
+]

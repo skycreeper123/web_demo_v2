@@ -24,6 +24,10 @@ def metadata(duration, fps=30, width=1280, height=720):
             "frames": round(duration * fps)}
 
 
+def export_metadata(duration, fps=30, width=1920, height=1080):
+    return metadata(duration, fps=fps, width=width, height=height)
+
+
 class VideoFlowMediaTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="video_flow_media_mock_")
@@ -61,7 +65,8 @@ class VideoFlowMediaTests(unittest.TestCase):
         if path == self.source:
             return dict(self.source_meta)
         if path.name.endswith(".tmp.mp4"):
-            return dict(self.result_meta if self.result_meta is not None else self.source_meta)
+            return dict(self.result_meta if self.result_meta is not None
+                        else export_metadata(self.source_meta["duration"]))
         raise AssertionError(f"Unexpected probe: {path}")
 
     def render(self, arguments, **_kwargs):
@@ -87,10 +92,13 @@ class VideoFlowMediaTests(unittest.TestCase):
         self.assertIn("[1:v:0]setpts=(PTS-STARTPTS)*0.8,", graph)
         self.assertIn("fps=30", graph)
         self.assertNotIn("fps=16", graph)
-        self.assertIn("scale=1280:720:force_original_aspect_ratio=decrease", graph)
-        self.assertIn("pad=1280:720", graph)
+        self.assertEqual(graph.count("scale=1920:1080:force_original_aspect_ratio=decrease"), 2)
+        self.assertEqual(graph.count("pad=1920:1080"), 2)
+        self.assertEqual(graph.count("format=yuv420p,fps=30,"), 2)
+        self.assertEqual(self.option_values(arguments, "-pix_fmt"), ["yuv420p"])
         self.assertEqual(self.option_values(arguments, "-t"), ["10"])
         self.assertEqual((result["duration"], result["fps"], result["replacement_duration"]), (10, 30, 4))
+        self.assertEqual((result["width"], result["height"]), (1920, 1080))
         self.assertTrue(Path(result["path"]).is_file())
 
     def test_suffix_puts_retained_before_generated_and_uses_remaining_duration(self):
@@ -98,8 +106,9 @@ class VideoFlowMediaTests(unittest.TestCase):
         graph = self.option_values(self.commands[0], "-filter_complex")[0]
         self.assertIn("[retained][generated]concat=", graph)
         self.assertIn("[1:v:0]setpts=(PTS-STARTPTS)*1.2,", graph)
-        self.assertIn("scale=1280:720:force_original_aspect_ratio=decrease", graph)
-        self.assertIn("pad=1280:720", graph)
+        self.assertEqual(graph.count("scale=1920:1080:force_original_aspect_ratio=decrease"), 2)
+        self.assertEqual(graph.count("pad=1920:1080"), 2)
+        self.assertEqual(graph.count("format=yuv420p,fps=30,"), 2)
         self.assertEqual(result["replacement_duration"], 6)
         self.assertEqual(result["duration"], 10)
 
@@ -128,45 +137,59 @@ class VideoFlowMediaTests(unittest.TestCase):
         self.assertEqual(self.option_values(arguments, "-map"), ["[video]", "1:a?"])
         self.assertEqual(result["duration"], 10)
 
-    def test_spatial_square_output_reverses_v5_resize_for_landscape_and_portrait_sources(self):
-        self.generated_meta = metadata(5, fps=16, width=832, height=832)
-        for width, height in ((1920, 1080), (1080, 1920)):
+    def test_spatial_model_alignment_exports_source_aspect_at_1080_short_side(self):
+        cases = ((1280, 720, 1920, 1080), (720, 1280, 1080, 1920),
+                 (768, 768, 1080, 1080), (321, 241, 1438, 1080))
+        for width, height, output_width, output_height in cases:
             with self.subTest(source_geometry=(width, height)):
-                self.source_meta = metadata(10, width=width, height=height)
+                self.source_meta = metadata(10, fps=24, width=width, height=height)
+                self.generated_meta = metadata(5, width=(output_width + 15) // 16 * 16,
+                                               height=(output_height + 15) // 16 * 16)
+                self.result_meta = export_metadata(10, width=output_width, height=output_height)
                 output = self.root / f"spatial_{width}_{height}.mp4"
                 media.finalize_spatial(self.generated, self.source, output)
                 graph = self.option_values(self.commands[-1], "-filter_complex")[0]
-                self.assertIn(f"scale={width}:{height},setsar=1,", graph)
+                self.assertIn(f"scale={output_width}:{output_height},setsar=1,format=yuv420p,", graph)
                 self.assertNotIn("force_original_aspect_ratio", graph)
                 self.assertNotIn(",pad=", graph)
                 self.assertIn("setpts=(PTS-STARTPTS)*2,", graph)
                 self.assertIn("fps=30", graph)
 
-    def test_filter_and_encoder_preserve_integer_ntsc_and_unusual_source_frame_rates(self):
-        # These rates include the actual local a/d/f sample headers. In
-        # particular, 29.925 is a real constant rate and must not round to 30.
-        cases = ((30, "30", "1/30", "10020"),
-                 (30000 / 1001, "30000/1001", "1001/30000", "30000"),
-                 (29.925, "1197/40", "40/1197", "10773"),
-                 (7525 / 251, "7525/251", "251/7525", "15050"))
-        for index, (fps, rate, time_base, timescale) in enumerate(cases):
-            with self.subTest(source_fps=fps):
-                self.source_meta = metadata(300 / fps, fps=fps)
-                media.finalize_spatial(self.generated, self.source, self.root / f"rate_{index}.mp4")
-                arguments = self.commands[-1]
-                graph = self.option_values(arguments, "-filter_complex")[0]
-                self.assertIn(f"fps={rate},", graph)
-                self.assertEqual(self.option_values(arguments, "-r:v"), [rate])
-                self.assertEqual(self.option_values(arguments, "-fps_mode:v"), ["cfr"])
-                self.assertEqual(self.option_values(arguments, "-enc_time_base:v"), [time_base])
-                self.assertEqual(self.option_values(arguments, "-video_track_timescale"), [timescale])
+    def test_all_final_filters_and_encoders_use_30fps_from_integer_ntsc_and_unusual_sources(self):
+        cases = (24, 25, 30, 30000 / 1001, 29.925, 7525 / 251)
+        for index, fps in enumerate(cases):
+            for flow in ("spatial", "prefix", "suffix"):
+                with self.subTest(source_fps=fps, flow=flow):
+                    self.source_meta = metadata(300 / fps, fps=fps)
+                    duration = self.source_meta["duration"]
+                    output = self.root / f"rate_{index}_{flow}.mp4"
+                    if flow == "spatial":
+                        result = media.finalize_spatial(self.generated, self.source, output)
+                    else:
+                        self.retained_meta = metadata(duration - 4 if flow == "prefix" else 4, fps=fps)
+                        result = media.assemble_video(self.retained, self.generated, self.source, output,
+                                                      direction=flow, cut_seconds=4)
+                    arguments = self.commands[-1]
+                    graph = self.option_values(arguments, "-filter_complex")[0]
+                    self.assertIn("fps=30,", graph)
+                    self.assertEqual(self.option_values(arguments, "-r:v"), ["30"])
+                    self.assertEqual(self.option_values(arguments, "-fps_mode:v"), ["cfr"])
+                    self.assertEqual(self.option_values(arguments, "-enc_time_base:v"), ["1/30"])
+                    self.assertEqual(self.option_values(arguments, "-video_track_timescale"), ["10020"])
+                    self.assertEqual(result["source_fps"], fps)
+                    self.assertEqual(result["fps"], 30)
+                    self.assertEqual(result["fps_rational"], "30")
+                    self.assertEqual(result["duration"], duration)
+                    self.assertEqual(result["frames"], round(duration * 30))
+                    self.assertEqual(result["source_duration"], duration)
+                    self.assertEqual((result["width"], result["height"]), (1920, 1080))
 
     def test_small_average_fps_variance_with_at_most_one_frame_difference_is_accepted(self):
         # The first case differs by more than the old 0.1% FPS threshold but
         # stays within half a frame on the source timeline. The second lands
         # exactly at the new one-frame cadence/count boundary.
-        cases = ((metadata(10), {**metadata(300 / 29.95, fps=29.95), "frames": 300}),
-                 (metadata(4), metadata(4, fps=29.75)))
+        cases = ((metadata(10), {**export_metadata(300 / 29.95, fps=29.95), "frames": 300}),
+                 (metadata(4), export_metadata(4, fps=29.75)))
         for index, (source_meta, result_meta) in enumerate(cases):
             with self.subTest(case=index):
                 self.source_meta, self.result_meta = source_meta, result_meta
@@ -178,7 +201,7 @@ class VideoFlowMediaTests(unittest.TestCase):
     def test_real_fps_mismatch_is_rejected_with_diagnostic_metadata(self):
         for actual_fps in (16, 25):
             with self.subTest(actual_fps=actual_fps):
-                self.result_meta = metadata(10, fps=actual_fps)
+                self.result_meta = export_metadata(10, fps=actual_fps)
                 output = self.root / f"wrong_fps_{actual_fps}.mp4"
                 with self.assertRaises(RuntimeError) as raised:
                     media.finalize_spatial(self.generated, self.source, output)
@@ -191,8 +214,8 @@ class VideoFlowMediaTests(unittest.TestCase):
     def test_long_clip_drift_over_one_frame_and_excess_frame_count_are_rejected(self):
         # 60 s at 29.965 reported FPS remains within the independent 75 ms
         # duration tolerance, yet accumulates > 2 frames of cadence drift.
-        cases = ((metadata(60), {**metadata(1800 / 29.965, fps=29.965), "frames": 1800}),
-                 (metadata(300 / 29.925, fps=29.925), metadata(302 / 30, fps=30)))
+        cases = ((metadata(60), {**export_metadata(1800 / 29.965, fps=29.965), "frames": 1800}),
+                 (metadata(60, fps=24), export_metadata(1802 / 30)))
         for index, (source_meta, result_meta) in enumerate(cases):
             with self.subTest(case=index):
                 self.source_meta, self.result_meta = source_meta, result_meta
@@ -200,7 +223,7 @@ class VideoFlowMediaTests(unittest.TestCase):
                     media.finalize_spatial(self.generated, self.source, self.root / f"drift_{index}.mp4")
 
     def test_duration_and_geometry_mismatches_still_fail_when_reported_fps_matches(self):
-        cases = ((metadata(9.5), "时长"), (metadata(10, width=640, height=360), "尺寸"))
+        cases = ((export_metadata(9.5), "时长"), (export_metadata(10, width=640, height=360), "尺寸"))
         for index, (result_meta, error) in enumerate(cases):
             with self.subTest(error=error):
                 self.result_meta = result_meta
@@ -216,6 +239,16 @@ class VideoFlowMediaTests(unittest.TestCase):
                     media.prepare_temporal(self.source, self.root / "prepare", direction, cut)
         self.mock_execute.assert_not_called()
         self.assertFalse((self.root / "prepare").exists())
+
+    def test_prepared_intermediate_preserves_unusual_source_rate_and_odd_geometry(self):
+        self.source_meta = metadata(10, fps=29.925, width=641, height=481)
+        self.result_meta = metadata(4, fps=29.925, width=641, height=481)
+        result = media.prepare_temporal(self.source, self.root / "preserved", "suffix", 4)
+        arguments = self.commands[0]
+        self.assertIn("fps=1197/40", self.option_values(arguments, "-vf")[0])
+        self.assertEqual(self.option_values(arguments, "-r:v"), ["1197/40"])
+        self.assertEqual(self.option_values(arguments, "-pix_fmt"), ["yuv444p"])
+        self.assertEqual((result["width"], result["height"], result["fps"]), (641, 481, 29.925))
 
     def test_optional_suffix_target_is_last_frame_of_full_source_not_retained_boundary(self):
         self.result_meta = metadata(4)

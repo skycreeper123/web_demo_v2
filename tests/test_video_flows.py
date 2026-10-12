@@ -181,6 +181,7 @@ class FlowTests(unittest.TestCase):
         self.assertNotIn("target_end", flow["media"])
         self.assertEqual(flows._step(flow, "motion_prompt")["settings"]["media"], ["boundary_frame", "target_end"])
         with patch.object(flows, "load_comfy_config", return_value={"workflow_manifest_dir": str(ROOT / "workflow")}), \
+             patch.object(flows, "probe_video", return_value={"width": 1280, "height": 720, "fps": 24, "duration": 10}), \
              patch.object(flows, "run_comfy_job", return_value={"status": "completed", "items": [{"path": self.media["videoPath"]}]}) as comfy:
             flows._run_comfy(flow, flows._step(flow, "motion_render"), self.root, "offline", lambda _: None, lambda **_: None)
         form = comfy.call_args.kwargs["payload"]["formInputs"]
@@ -320,6 +321,7 @@ class FlowTests(unittest.TestCase):
             captured.update(kwargs)
             return {"status": "completed", "items": [{"path": self.media["videoPath"]}]}
         with patch.object(flows, "load_comfy_config", return_value={"workflow_manifest_dir": str(ROOT / "workflow")}), \
+             patch.object(flows, "probe_video", return_value={"width": 1280, "height": 720, "fps": 24, "duration": 10}), \
              patch.object(flows, "run_comfy_job", side_effect=generate):
             outputs = flows._run_comfy(flow, step, self.root, "parent", lambda _: None, lambda **_: None)
         payload = captured["payload"]
@@ -327,8 +329,37 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(payload["outputNodeId"], "145")
         self.assertEqual(payload["formInputs"]["start_image_ref"], self.media["startImagePath"])
         self.assertEqual(payload["formInputs"]["end_image_ref"], self.media["endImagePath"])
-        self.assertEqual(payload["formInputs"]["params.node_162.value"] % 4, 1)
+        self.assertEqual(payload["formInputs"]["params.node_162.value"], 121)
+        self.assertEqual(payload["formInputs"]["params.node_145.frame_rate"], 30)
+        self.assertEqual(payload["formInputs"]["params.node_160.value"], 1920)
+        self.assertEqual(payload["formInputs"]["params.node_161.value"], 1088)
         self.assertEqual(outputs[0]["key"], "replacement_video")
+
+    def test_video_generation_uses_hd_dimensions_and_30fps_for_all_recipes(self):
+        for mode, direction in (("spatial", "prefix"), ("prefix", "prefix"),
+                                ("suffix", "suffix"), ("mixed", "prefix"), ("mixed", "suffix")):
+            for source_width, source_height, width, height in ((1280, 720, 1920, 1088),
+                                                              (720, 1280, 1088, 1920)):
+                with self.subTest(mode=mode, direction=direction, source=(source_width, source_height)):
+                    flow = self.create(mode, temporalMode=direction, startImagePath=self.media["startImagePath"])
+                    flow["artifacts"]["boundary_frame"] = flows._artifact("boundary_frame", self.media["endImagePath"], flow["id"])
+                    flow["media"] = {"replacement_duration": 6.0}
+                    for step in flow["steps"]:
+                        if step["kind"] != "comfy" or step["settings"]["role"] == "first_image":
+                            continue
+                        with patch.object(flows, "load_comfy_config", return_value={"workflow_manifest_dir": str(ROOT / "workflow")}), \
+                             patch.object(flows, "probe_video", return_value={"width": source_width, "height": source_height, "fps": 24, "duration": 10}), \
+                             patch.object(flows, "run_comfy_job", return_value={"status": "completed", "items": [{"path": self.media["videoPath"]}]}) as comfy:
+                            flows._run_comfy(flow, step, self.root, "hd", lambda _: None, lambda **_: None)
+                        form = comfy.call_args.kwargs["payload"]["formInputs"]
+                        if step["settings"]["role"] == "spatial":
+                            self.assertEqual((form["params.node_1420.width"], form["params.node_1420.height"]), (width, height))
+                            self.assertEqual(form["params.node_1412.force_rate"], 30)
+                            self.assertEqual(form["params.node_1412.frame_load_cap"], 0)
+                        else:
+                            self.assertEqual((form["params.node_160.value"], form["params.node_161.value"]), (width, height))
+                            self.assertEqual(form["params.node_145.frame_rate"], 30)
+                            self.assertEqual(form["params.node_162.value"], 181)
 
 
 if __name__ == "__main__":

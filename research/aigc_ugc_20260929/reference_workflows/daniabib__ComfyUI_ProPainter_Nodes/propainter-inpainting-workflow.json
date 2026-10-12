@@ -1,0 +1,1081 @@
+{
+  "last_node_id": 81,
+  "last_link_id": 149,
+  "nodes": [
+    {
+      "id": 22,
+      "type": "VHS_VideoCombine",
+      "pos": [
+        165,
+        633
+      ],
+      "size": [
+        400,
+        516.1666666666666
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 26
+        },
+        {
+          "name": "audio",
+          "type": "VHS_AUDIO",
+          "link": null
+        },
+        {
+          "name": "meta_batch",
+          "type": "VHS_BatchManager",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "Filenames",
+          "type": "VHS_FILENAMES",
+          "links": null,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VHS_VideoCombine"
+      },
+      "widgets_values": {
+        "frame_rate": 24,
+        "loop_count": 0,
+        "filename_prefix": "PorPainter_Testing",
+        "format": "video/h264-mp4",
+        "pix_fmt": "yuv420p",
+        "crf": 19,
+        "save_metadata": true,
+        "pingpong": false,
+        "save_output": false,
+        "videopreview": {
+          "hidden": false,
+          "paused": false,
+          "params": {
+            "filename": "PorPainter_Testing_00001.mp4",
+            "subfolder": "",
+            "type": "temp",
+            "format": "video/h264-mp4"
+          }
+        }
+      }
+    },
+    {
+      "id": 24,
+      "type": "MaskToImage",
+      "pos": [
+        643,
+        542
+      ],
+      "size": {
+        "0": 194.9075164794922,
+        "1": 26
+      },
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 100
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            30
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "MaskToImage"
+      }
+    },
+    {
+      "id": 26,
+      "type": "VHS_VideoCombine",
+      "pos": [
+        581,
+        638
+      ],
+      "size": [
+        400,
+        516.1666666666666
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 30
+        },
+        {
+          "name": "audio",
+          "type": "VHS_AUDIO",
+          "link": null
+        },
+        {
+          "name": "meta_batch",
+          "type": "VHS_BatchManager",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "Filenames",
+          "type": "VHS_FILENAMES",
+          "links": null,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VHS_VideoCombine"
+      },
+      "widgets_values": {
+        "frame_rate": 24,
+        "loop_count": 0,
+        "filename_prefix": "PorPainter_Testing",
+        "format": "video/h264-mp4",
+        "pix_fmt": "yuv420p",
+        "crf": 19,
+        "save_metadata": true,
+        "pingpong": false,
+        "save_output": false,
+        "videopreview": {
+          "hidden": false,
+          "paused": false,
+          "params": {
+            "filename": "PorPainter_Testing_00002.mp4",
+            "subfolder": "",
+            "type": "temp",
+            "format": "video/h264-mp4"
+          }
+        }
+      }
+    },
+    {
+      "id": 42,
+      "type": "ImageToMask",
+      "pos": [
+        -847,
+        673
+      ],
+      "size": {
+        "0": 210,
+        "1": 58
+      },
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 138
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            145
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageToMask"
+      },
+      "widgets_values": [
+        "red"
+      ]
+    },
+    {
+      "id": 49,
+      "type": "ProPainterInpaint",
+      "pos": [
+        -218,
+        395
+      ],
+      "size": {
+        "0": 315,
+        "1": 290
+      },
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 142
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 145
+        },
+        {
+          "name": "width",
+          "type": "INT",
+          "link": 132,
+          "widget": {
+            "name": "width"
+          }
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "link": 133,
+          "widget": {
+            "name": "height"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            95
+          ],
+          "shape": 3,
+          "slot_index": 0
+        },
+        {
+          "name": "FLOW_MASK",
+          "type": "MASK",
+          "links": [
+            96
+          ],
+          "shape": 3,
+          "slot_index": 1
+        },
+        {
+          "name": "MASK_DILATE",
+          "type": "MASK",
+          "links": [
+            100
+          ],
+          "shape": 3,
+          "slot_index": 2
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ProPainterInpaint"
+      },
+      "widgets_values": [
+        640,
+        480,
+        5,
+        8,
+        6,
+        6,
+        50,
+        20,
+        "enable"
+      ]
+    },
+    {
+      "id": 71,
+      "type": "ImageScaleBy",
+      "pos": [
+        -890,
+        403
+      ],
+      "size": {
+        "0": 315,
+        "1": 82
+      },
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 136
+        },
+        {
+          "name": "scale_by",
+          "type": "FLOAT",
+          "link": 140,
+          "widget": {
+            "name": "scale_by"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            128,
+            142
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageScaleBy"
+      },
+      "widgets_values": [
+        "nearest-exact",
+        0.5
+      ]
+    },
+    {
+      "id": 76,
+      "type": "ImageScaleBy",
+      "pos": [
+        -955,
+        777
+      ],
+      "size": {
+        "0": 315,
+        "1": 82
+      },
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 143
+        },
+        {
+          "name": "scale_by",
+          "type": "FLOAT",
+          "link": 141,
+          "widget": {
+            "name": "scale_by"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            138,
+            146
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageScaleBy"
+      },
+      "widgets_values": [
+        "nearest-exact",
+        0.5
+      ]
+    },
+    {
+      "id": 80,
+      "type": "VHS_VideoCombine",
+      "pos": [
+        -608,
+        779
+      ],
+      "size": [
+        400,
+        517.75
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 146
+        },
+        {
+          "name": "audio",
+          "type": "VHS_AUDIO",
+          "link": null
+        },
+        {
+          "name": "meta_batch",
+          "type": "VHS_BatchManager",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "Filenames",
+          "type": "VHS_FILENAMES",
+          "links": null,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VHS_VideoCombine"
+      },
+      "widgets_values": {
+        "frame_rate": 24,
+        "loop_count": 0,
+        "filename_prefix": "ProPainter_Inpaint_Testing",
+        "format": "video/h264-mp4",
+        "pix_fmt": "yuv420p",
+        "crf": 19,
+        "save_metadata": true,
+        "pingpong": false,
+        "save_output": false,
+        "videopreview": {
+          "hidden": false,
+          "paused": false,
+          "params": {
+            "filename": "ProPainter_Inpaint_Testing_00003.mp4",
+            "subfolder": "",
+            "type": "temp",
+            "format": "video/h264-mp4"
+          }
+        }
+      }
+    },
+    {
+      "id": 48,
+      "type": "VHS_VideoCombine",
+      "pos": [
+        1041,
+        255
+      ],
+      "size": [
+        400,
+        517.75
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 147
+        },
+        {
+          "name": "audio",
+          "type": "VHS_AUDIO",
+          "link": null
+        },
+        {
+          "name": "meta_batch",
+          "type": "VHS_BatchManager",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "Filenames",
+          "type": "VHS_FILENAMES",
+          "links": null,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VHS_VideoCombine"
+      },
+      "widgets_values": {
+        "frame_rate": 24,
+        "loop_count": 0,
+        "filename_prefix": "ProPainter_Inpaint_Testing",
+        "format": "video/h264-mp4",
+        "pix_fmt": "yuv420p",
+        "crf": 19,
+        "save_metadata": true,
+        "pingpong": false,
+        "save_output": false,
+        "videopreview": {
+          "hidden": false,
+          "paused": false,
+          "params": {
+            "filename": "ProPainter_Inpaint_Testing_00001.mp4",
+            "subfolder": "",
+            "type": "temp",
+            "format": "video/h264-mp4"
+          }
+        }
+      }
+    },
+    {
+      "id": 78,
+      "type": "VHS_LoadVideoPath",
+      "pos": [
+        -1307,
+        617
+      ],
+      "size": [
+        315,
+        214
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "meta_batch",
+          "type": "VHS_BatchManager",
+          "link": null
+        },
+        {
+          "name": "frame_load_cap",
+          "type": "INT",
+          "link": 149,
+          "widget": {
+            "name": "frame_load_cap"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            143
+          ],
+          "shape": 3,
+          "slot_index": 0
+        },
+        {
+          "name": "frame_count",
+          "type": "INT",
+          "links": null,
+          "shape": 3
+        },
+        {
+          "name": "audio",
+          "type": "VHS_AUDIO",
+          "links": null,
+          "shape": 3
+        },
+        {
+          "name": "video_info",
+          "type": "VHS_VIDEOINFO",
+          "links": null,
+          "shape": 3
+        }
+      ],
+      "title": "Load Masks",
+      "properties": {
+        "Node name for S&R": "VHS_LoadVideoPath"
+      },
+      "widgets_values": {
+        "video": "input/to-inpaint/rally-mask.mp4",
+        "force_rate": 0,
+        "force_size": "Disabled",
+        "custom_width": 512,
+        "custom_height": 512,
+        "frame_load_cap": 24,
+        "skip_first_frames": 35,
+        "select_every_nth": 1,
+        "videopreview": {
+          "hidden": false,
+          "paused": false,
+          "params": {
+            "frame_load_cap": 24,
+            "skip_first_frames": 35,
+            "force_rate": 0,
+            "filename": "input/to-inpaint/rally-mask.mp4",
+            "type": "path",
+            "format": "video/mp4",
+            "select_every_nth": 1,
+            "force_size": "Disabled"
+          }
+        }
+      }
+    },
+    {
+      "id": 66,
+      "type": "VHS_LoadVideoPath",
+      "pos": [
+        -1305,
+        313
+      ],
+      "size": [
+        315,
+        214
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "meta_batch",
+          "type": "VHS_BatchManager",
+          "link": null
+        },
+        {
+          "name": "frame_load_cap",
+          "type": "INT",
+          "link": 148,
+          "widget": {
+            "name": "frame_load_cap"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            136,
+            147
+          ],
+          "shape": 3,
+          "slot_index": 0
+        },
+        {
+          "name": "frame_count",
+          "type": "INT",
+          "links": null,
+          "shape": 3
+        },
+        {
+          "name": "audio",
+          "type": "VHS_AUDIO",
+          "links": null,
+          "shape": 3
+        },
+        {
+          "name": "video_info",
+          "type": "VHS_VIDEOINFO",
+          "links": null,
+          "shape": 3
+        }
+      ],
+      "title": "Load Video Frames",
+      "properties": {
+        "Node name for S&R": "VHS_LoadVideoPath"
+      },
+      "widgets_values": {
+        "video": "input/to-inpaint/rally.mp4",
+        "force_rate": 0,
+        "force_size": "Disabled",
+        "custom_width": 512,
+        "custom_height": 512,
+        "frame_load_cap": 24,
+        "skip_first_frames": 35,
+        "select_every_nth": 1,
+        "videopreview": {
+          "hidden": false,
+          "paused": false,
+          "params": {
+            "frame_load_cap": 24,
+            "skip_first_frames": 35,
+            "force_rate": 0,
+            "filename": "input/to-inpaint/rally.mp4",
+            "type": "path",
+            "format": "video/mp4",
+            "select_every_nth": 1,
+            "force_size": "Disabled"
+          }
+        }
+      }
+    },
+    {
+      "id": 21,
+      "type": "MaskToImage",
+      "pos": [
+        169,
+        549
+      ],
+      "size": {
+        "0": 194.9075164794922,
+        "1": 26
+      },
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 96
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            26
+          ],
+          "shape": 3,
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "MaskToImage"
+      }
+    },
+    {
+      "id": 19,
+      "type": "VHS_VideoCombine",
+      "pos": [
+        1469,
+        257
+      ],
+      "size": [
+        400,
+        516.1666666666666
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 95
+        },
+        {
+          "name": "audio",
+          "type": "VHS_AUDIO",
+          "link": null
+        },
+        {
+          "name": "meta_batch",
+          "type": "VHS_BatchManager",
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "name": "Filenames",
+          "type": "VHS_FILENAMES",
+          "links": null,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VHS_VideoCombine"
+      },
+      "widgets_values": {
+        "frame_rate": 24,
+        "loop_count": 0,
+        "filename_prefix": "ProPainter_Inpaint_Testing",
+        "format": "video/h264-mp4",
+        "pix_fmt": "yuv420p",
+        "crf": 19,
+        "save_metadata": true,
+        "pingpong": false,
+        "save_output": false,
+        "videopreview": {
+          "hidden": false,
+          "paused": false,
+          "params": {
+            "filename": "ProPainter_Inpaint_Testing_00004.mp4",
+            "subfolder": "",
+            "type": "temp",
+            "format": "video/h264-mp4"
+          }
+        }
+      }
+    },
+    {
+      "id": 81,
+      "type": "PrimitiveNode",
+      "pos": [
+        -1675,
+        477
+      ],
+      "size": [
+        244.2663403519448,
+        82
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "outputs": [
+        {
+          "name": "INT",
+          "type": "INT",
+          "links": [
+            148,
+            149
+          ],
+          "slot_index": 0,
+          "widget": {
+            "name": "frame_load_cap"
+          }
+        }
+      ],
+      "title": "Number of Frames",
+      "properties": {
+        "Run widget replace on values": false
+      },
+      "widgets_values": [
+        24,
+        "fixed"
+      ]
+    },
+    {
+      "id": 44,
+      "type": "GetImageSize+",
+      "pos": [
+        -520,
+        430
+      ],
+      "size": {
+        "0": 207.033203125,
+        "1": 46
+      },
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 128
+        }
+      ],
+      "outputs": [
+        {
+          "name": "width",
+          "type": "INT",
+          "links": [
+            132
+          ],
+          "shape": 3,
+          "slot_index": 0
+        },
+        {
+          "name": "height",
+          "type": "INT",
+          "links": [
+            133
+          ],
+          "shape": 3,
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "GetImageSize+"
+      }
+    },
+    {
+      "id": 77,
+      "type": "PrimitiveNode",
+      "pos": [
+        -892,
+        264
+      ],
+      "size": {
+        "0": 210,
+        "1": 82
+      },
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "outputs": [
+        {
+          "name": "FLOAT",
+          "type": "FLOAT",
+          "links": [
+            140,
+            141
+          ],
+          "slot_index": 0,
+          "widget": {
+            "name": "scale_by"
+          }
+        }
+      ],
+      "title": "Scale",
+      "properties": {
+        "Run widget replace on values": false
+      },
+      "widgets_values": [
+        0.5,
+        "fixed"
+      ]
+    }
+  ],
+  "links": [
+    [
+      26,
+      21,
+      0,
+      22,
+      0,
+      "IMAGE"
+    ],
+    [
+      30,
+      24,
+      0,
+      26,
+      0,
+      "IMAGE"
+    ],
+    [
+      95,
+      49,
+      0,
+      19,
+      0,
+      "IMAGE"
+    ],
+    [
+      96,
+      49,
+      1,
+      21,
+      0,
+      "MASK"
+    ],
+    [
+      100,
+      49,
+      2,
+      24,
+      0,
+      "MASK"
+    ],
+    [
+      128,
+      71,
+      0,
+      44,
+      0,
+      "IMAGE"
+    ],
+    [
+      132,
+      44,
+      0,
+      49,
+      2,
+      "INT"
+    ],
+    [
+      133,
+      44,
+      1,
+      49,
+      3,
+      "INT"
+    ],
+    [
+      136,
+      66,
+      0,
+      71,
+      0,
+      "IMAGE"
+    ],
+    [
+      138,
+      76,
+      0,
+      42,
+      0,
+      "IMAGE"
+    ],
+    [
+      140,
+      77,
+      0,
+      71,
+      1,
+      "FLOAT"
+    ],
+    [
+      141,
+      77,
+      0,
+      76,
+      1,
+      "FLOAT"
+    ],
+    [
+      142,
+      71,
+      0,
+      49,
+      0,
+      "IMAGE"
+    ],
+    [
+      143,
+      78,
+      0,
+      76,
+      0,
+      "IMAGE"
+    ],
+    [
+      145,
+      42,
+      0,
+      49,
+      1,
+      "MASK"
+    ],
+    [
+      146,
+      76,
+      0,
+      80,
+      0,
+      "IMAGE"
+    ],
+    [
+      147,
+      66,
+      0,
+      48,
+      0,
+      "IMAGE"
+    ],
+    [
+      148,
+      81,
+      0,
+      66,
+      1,
+      "INT"
+    ],
+    [
+      149,
+      81,
+      0,
+      78,
+      1,
+      "INT"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.7513148009015777,
+      "offset": {
+        "0": 379.16315964805545,
+        "1": -238.8412295951218
+      }
+    }
+  },
+  "version": 0.4
+}

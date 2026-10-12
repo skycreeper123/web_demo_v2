@@ -1,0 +1,115 @@
+{
+  "checked_on": "2026-09-29",
+  "count": 18,
+  "gpu_execution": false,
+  "files": [
+    {
+      "file": "wanvideo_1_3B_ReCamMaster_example_01.json",
+      "sha256": "7B47F465F3496B1217E730E5C79B094B61E05309AA3FB666D164D3475698F0DC",
+      "json_valid": true,
+      "source_match": true
+    },
+    {
+      "file": "wanvideo_1_3B_VACE_examples_03.json",
+      "sha256": "06CF3B68602617D785D1AE094AC8E978D0C75FCD3E437F8FD8DD677D6C3F2074",
+      "json_valid": true,
+      "source_match": true
+    },
+    {
+      "file": "wanvideo_2_1_14B_SCAIL_pose_control_example_01.json",
+      "sha256": "2C858A68304D5788804E5A834AC61DD5AA5D98E83382DC363D3A6A50E1AF3C1C",
+      "json_valid": true,
+      "source_match": true
+    },
+    {
+      "file": "wanvideo_WanAnimate_preprocess_example_02.json",
+      "sha256": "13B26146DF015A449F04917ABE651E956DFBA0A979831D37E7361A6A56575DC0",
+      "json_valid": true,
+      "source_match": true
+    },
+    {
+      "file": "LTX-2.3_ICLoRA_DubIt_Two_Stage_Distilled.json",
+      "sha256": "A9F90316756D804BB15129E1BD2324B1C6719256877DBCBECBB2A0EEDBD694C6",
+      "json_valid": true,
+      "source_match": true
+    },
+    {
+      "file": "LTX-2.5_ICLoRA_Inpaint_Two_Stage_Distilled.json",
+      "sha256": "7C77DB0895CF7EFA7EC6563BBEDADF70ABBB1E12176B888E33DB74AFFA2C92A0",
+      "json_valid": true,
+      "source_match": true
+    },
+    {
+      "file": "video_wan21_scail2_character_replacement_int8.json",
+      "sha256": "9336CE2E9BDA240848319E1CDC17FDAEED4E49A3AC07B267259410C339AC502D",
+      "json_valid": true,
+      "source_match": true
+    },
+    {
+      "file": "video_wan2_2_14B_animate.json",
+      "sha256": "9A088C90B15A5BAC80AC237D4D1FA2F46C479E606B9276A5D75F46F70439E9B9",
+      "json_valid": true,
+      "source_match": true
+    },
+    {
+      "file": "video_wan2_2_5B_fun_control.json",
+      "sha256": "9E671AA9CF9013EEECCC837D578E0C3523710CCFCB0508E0683E587CB280E5CC",
+      "json_valid": true,
+      "source_match": true
+    },
+    {
+      "file": "video_wan2_2_5B_fun_inpaint.json",
+      "sha256": "8EFA4D2434745C6F71D886F08335CB4D7A2C4244ECC7ED21FF3A5249C9DD59BA",
+      "json_valid": true,
+      "source_match": true
+    },
+    {
+      "file": "video_wan2_2_5B_ti2v.json",
+      "sha256": "23C93B88ADECBDF5BCF4C5438117070FE757F30ACA373DD6A2EB488D2C6A585A",
+      "json_valid": true,
+      "source_match": true
+    },
+    {
+      "file": "video_wan_animate2_distilled.json",
+      "sha256": "E08670CF0A14F4648E97283E4D7C78FE945015D5B11E4550E94B636A1F79324F",
+      "json_valid": true,
+      "source_match": true
+    },
+    {
+      "file": "video_wan_vace_14B_v2v.json",
+      "sha256": "C190961990C76696413C1EBE2BB5C81D19705E8D485F1C39014FE5EC69F3FE59",
+      "json_valid": true,
+      "source_match": true
+    },
+    {
+      "file": "video_wan_vace_flf2v.json",
+      "sha256": "5FBEEE13BB27FFE8C861D566813E54F4307E0239A8DCA4E0AA78F4503590C58E",
+      "json_valid": true,
+      "source_match": true
+    },
+    {
+      "file": "video_wan_vace_inpainting.json",
+      "sha256": "D664DAFF8D38AF123C372B506E4B4B6D5CFBC89C9976778DC7A08E9C50068315",
+      "json_valid": true,
+      "source_match": true
+    },
+    {
+      "file": "video_wan_vace_outpainting.json",
+      "sha256": "4F76D56C3F6F49121B6CDC897F55039BCEC2C295F564E618409D3DADBF0973F9",
+      "json_valid": true,
+      "source_match": true
+    },
+    {
+      "file": "latentsync1.5_comfyui_basic.json",
+      "sha256": "E69ED94EE7A83A9444AAA78CDDF31732791B83D76EF71F51E707A92A841BF289",
+      "json_valid": true,
+      "source_match": true
+    },
+    {
+      "file": "propainter-inpainting-workflow.json",
+      "sha256": "7B5E0564A98D9E7FB66FD4F30A1E2741E7C90C07436A6A2878B7EB8D9D6A9603",
+      "json_valid": true,
+      "source_match": true
+    }
+  ]
+}

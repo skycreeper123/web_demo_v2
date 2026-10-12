@@ -1,0 +1,89 @@
+{
+  "37": {
+    "inputs": {
+      "audio": "MichaelPoundVoice4.mp3"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "LoadAudio"
+    }
+  },
+  "40": {
+    "inputs": {
+      "video": "Mike_Test.mp4",
+      "force_rate": 25,
+      "custom_width": 0,
+      "custom_height": 0,
+      "frame_load_cap": 0,
+      "skip_first_frames": 0,
+      "select_every_nth": 1,
+      "format": "AnimateDiff"
+    },
+    "class_type": "VHS_LoadVideo",
+    "_meta": {
+      "title": "Load Video (Upload) 🎥🅥🅗🅢"
+    }
+  },
+  "41": {
+    "inputs": {
+      "frame_rate": 25,
+      "loop_count": 0,
+      "filename_prefix": "latentsync",
+      "format": "video/h264-mp4",
+      "pix_fmt": "yuv420p",
+      "crf": 19,
+      "save_metadata": true,
+      "trim_to_audio": false,
+      "pingpong": false,
+      "save_output": true,
+      "images": [
+        "43",
+        0
+      ],
+      "audio": [
+        "43",
+        1
+      ]
+    },
+    "class_type": "VHS_VideoCombine",
+    "_meta": {
+      "title": "Video Combine 🎥🅥🅗🅢"
+    }
+  },
+  "43": {
+    "inputs": {
+      "seed": 415,
+      "images": [
+        "53",
+        0
+      ],
+      "audio": [
+        "53",
+        1
+      ]
+    },
+    "class_type": "D_LatentSyncNode",
+    "_meta": {
+      "title": "LatentSync Node"
+    }
+  },
+  "53": {
+    "inputs": {
+      "mode": "pingpong",
+      "fps": 25,
+      "silent_padding_sec": 0.5,
+      "images": [
+        "40",
+        0
+      ],
+      "audio": [
+        "37",
+        0
+      ]
+    },
+    "class_type": "D_VideoLengthAdjuster",
+    "_meta": {
+      "title": "Video Length Adjuster"
+    }
+  }
+}
