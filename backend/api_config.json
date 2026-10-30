@@ -1,8 +1,8 @@
 {
   "image": {
-    "api_key": "sk-ws-H.PHPMLMM.On7N.MEYCIQDEWxRQ2CQmw8QnYG0d7BLOb5Rwg_njkuo8mmZGBgfWpQIhAJ04yEc1f2sNi7nhiVW7-Zt388w3XYsimfAxM6r5Cqmz",
+    "api_key": "",
     "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "model": "qwen3-vl-flash",
+    "model": "qwen3-vl-plus",
     "output_dir": "output",
     "source_root_dir": "",
     "path_style": "linux",
@@ -10,19 +10,19 @@
     "overwrite": false
   },
   "image_edit": {
-    "api_key": "sk-ws-H.PHPMLMM.On7N.MEYCIQDEWxRQ2CQmw8QnYG0d7BLOb5Rwg_njkuo8mmZGBgfWpQIhAJ04yEc1f2sNi7nhiVW7-Zt388w3XYsimfAxM6r5Cqmz",
+    "api_key": "",
     "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "model": "qwen3-vl-flash",
+    "model": "qwen3-vl-plus",
     "output_dir": "output",
     "source_root_dir": "",
     "path_style": "linux",
-    "use_mock": true,
+    "use_mock": false,
     "overwrite": false
   },
   "video": {
-    "api_key": "sk-ws-H.PHPMLMM.On7N.MEYCIQDEWxRQ2CQmw8QnYG0d7BLOb5Rwg_njkuo8mmZGBgfWpQIhAJ04yEc1f2sNi7nhiVW7-Zt388w3XYsimfAxM6r5Cqmz",
+    "api_key": "",
     "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "model": "qwen3-vl-flash",
+    "model": "qwen3-vl-plus",
     "output_dir": "output",
     "video_source_root_dir": "",
     "reference_source_root_dir": "",
