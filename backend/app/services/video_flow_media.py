@@ -15,7 +15,52 @@ from typing import Any
 from uuid import uuid4
 
 from .video_clip_service import _get_ffmpeg_executable, _require_cv2
-from .video_output_profile import output_video_meta
+from .video_output_profile import output_video_meta, generation_dimensions, generation_frames
+
+
+def native_generation_plan(source_meta, profile, duration):
+    target = output_video_meta({**source_meta, "duration": duration}, profile)
+    width, height = generation_dimensions(source_meta, profile)
+    frames = target["frames"]
+    if frames < 1:
+        raise ValueError("替换时段不足一个目标生成帧。")
+    return {"width": width, "height": height, "fps": target["fps"],
+            "frames": frames, "requested_frames": generation_frames(frames / target["fps"], target["fps"]),
+            "target_width": target["width"], "target_height": target["height"], "duration": duration}
+
+
+def prepare_native_conditioning(source, output, plan):
+    """Resample source conditions and pad to the model grid BEFORE inference."""
+    source = _source_file(source)
+    output = _checked_output(output, [source])
+    width, height = plan['width'], plan['height']
+    tw, th = plan['target_width'], plan['target_height']
+    frames, fps = plan['requested_frames'], plan['fps']
+    # Pad on right/bottom so the final crop is exact, including even pixel grids.
+    vf = (f"scale={tw}:{th},pad={width}:{height}:0:0:color=black,setsar=1,"
+          f"fps={fps},tpad=stop_mode=clone:stop_duration={_number(frames/fps)},"
+          f"trim=end_frame={frames},setpts=PTS-STARTPTS")
+    _run_ffmpeg(['-i', str(source), '-an', '-vf', vf, '-frames:v', str(frames),
+                 *_video_encoding(plan), str(output)], duration=frames/fps, action="准备模型输入条件")
+    meta = probe_video(output)
+    if (meta['width'], meta['height'], meta['frames']) != (width, height, frames) or not math.isclose(meta['fps'], fps, abs_tol=.001):
+        raise RuntimeError("模型输入条件尺寸或帧数不符。")
+    return output
+
+
+def validate_native_video(meta, plan):
+    if (meta['width'], meta['height']) != (plan['width'], plan['height']):
+        raise ValueError(f"模型生成尺寸不达标：需要 {plan['width']}×{plan['height']}，实际 {meta['width']}×{meta['height']}；禁止后期放大。")
+    if not math.isclose(meta['fps'], plan['fps'], rel_tol=0, abs_tol=.001):
+        raise ValueError(f"模型生成帧率不达标：需要 {plan['fps']}，实际 {meta['fps']}；禁止后期转换帧率。")
+    if not plan['frames'] <= meta['frames'] <= plan['requested_frames']:
+        raise ValueError(f"模型生成帧数不达标：需要 {plan['frames']} 至 {plan['requested_frames']}，实际 {meta['frames']}；禁止补帧或拉伸时长。")
+
+
+def _native_filter(meta, plan):
+    validate_native_video(meta, plan)
+    return (f"crop={plan['target_width']}:{plan['target_height']}:0:0,setsar=1,"
+            f"trim=end_frame={plan['frames']},setpts=PTS-STARTPTS,format=yuv420p")
 
 
 def _source_file(value: Path) -> Path:
@@ -252,10 +297,11 @@ def _render_final(
     source_meta: dict[str, Any],
     filter_graph: str,
     keep_audio: bool,
+    profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     output = _checked_output(output, [*inputs, source])
     temporary = _temporary_path(output)
-    target_meta = output_video_meta(source_meta)
+    target_meta = output_video_meta(source_meta, profile)
     duration = float(source_meta["duration"])
     arguments: list[str] = []
     for input_path in [*inputs, source]:
@@ -274,6 +320,9 @@ def _render_final(
         target_fps = float(_frame_rate(target_meta))
         target_frames = int(target_meta["frames"])
         actual_fps = float(result_meta["fps"])
+        if (profile or {}).get('generationPolicy') == 'native' and (
+                result_meta['frames'] != target_frames or not math.isclose(actual_fps, target_fps, rel_tol=0, abs_tol=.001)):
+            raise RuntimeError(f"原生规格导出校验失败：需要 {target_frames} 帧 / {target_fps} fps，实际 {result_meta['frames']} 帧 / {actual_fps} fps。")
         fps_difference = abs(actual_fps - target_fps)
         details = (f"目标帧率 {target_fps:.9g} fps，实际 {actual_fps:.9g} fps；"
                    f"原片 {source_meta['frames']} 帧，目标 {target_frames} 帧，成片 {result_meta['frames']} 帧；"
@@ -312,11 +361,12 @@ def assemble_video(
     direction: str,
     cut_seconds: float,
     keep_audio: bool = True,
+    profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Join a generated replacement with retained footage on the source timeline."""
     retained, generated, source = (_source_file(path) for path in (retained, generated, source))
     source_meta = probe_video(source)
-    target_meta = output_video_meta(source_meta)
+    target_meta = output_video_meta(source_meta, profile)
     retained_meta, generated_meta = probe_video(retained), probe_video(generated)
     cut, retained_duration, replacement_duration = _timeline(source_meta, direction, cut_seconds)
     tolerance = max(2 / float(source_meta["fps"]), 2 / float(retained_meta["fps"]), 0.10)
@@ -324,6 +374,12 @@ def assemble_video(
         raise ValueError("保留片段时长与原视频切点不一致，请重新裁切保留片段。")
     retained_filter = _normalized_filter(retained_meta, target_meta, retained_duration, stretch=False)
     generated_filter = _normalized_filter(generated_meta, target_meta, replacement_duration, stretch=True)
+    if (profile or {}).get("generationPolicy") == "native":
+        plan = native_generation_plan(source_meta, profile, replacement_duration)
+        generated_filter = _native_filter(generated_meta, plan)
+        retained_frames = target_meta['frames'] - plan['frames']
+        # Only UGC is normalized; the generated portion is cropped, never retimed.
+        retained_filter = _normalized_filter(retained_meta, target_meta, retained_frames/target_meta['fps'], stretch=False)
     order = "[generated][retained]" if direction == "prefix" else "[retained][generated]"
     graph = (
         f"[0:v:0]{retained_filter}[retained];"
@@ -333,8 +389,45 @@ def assemble_video(
         f"tpad=stop_mode=clone:stop_duration={_number(2 / float(target_meta['fps']))},"
         f"trim=duration={_number(source_meta['duration'])},setpts=PTS-STARTPTS[video]"
     )
-    result = _render_final([retained, generated], source, output, source_meta, graph, keep_audio)
+    if (profile or {}).get("generationPolicy") == "native":
+        graph = (f"[0:v:0]{retained_filter}[retained];[1:v:0]{generated_filter}[generated];"
+                 f"{order}concat=n=2:v=1:a=0,trim=end_frame={target_meta['frames']},setpts=PTS-STARTPTS[video]")
+    result = _render_final([retained, generated], source, output, source_meta, graph, keep_audio, profile)
     return {**result, "direction": direction, "cut_seconds": cut, "replacement_duration": replacement_duration}
+
+
+def assemble_native_region(generated: Path, source: Path, output: Path, *, direction: str,
+                           cut_seconds: float, keep_audio: bool, profile: dict[str, Any]) -> dict[str, Any]:
+    """Anchor the edited side of the cut to the original timeline without retiming."""
+    generated, source = _source_file(generated), _source_file(source)
+    source_meta = probe_video(source)
+    target = output_video_meta(source_meta, profile)
+    _, _, duration = _timeline(source_meta, direction, cut_seconds)
+    plan = native_generation_plan(source_meta, profile, duration)
+    fps, total, edited = target['fps'], target['frames'], plan['frames']
+    if min(edited, total - edited) < 1:
+        raise ValueError('区域替换的切点两侧必须各有至少一个输出帧。')
+    prefix = direction == 'prefix'
+    start, end = (0, edited) if prefix else (total - edited, total)
+    keep_start, keep_end = (edited, total) if prefix else (0, start)
+    # Fade only inside the edited interval. At the adjoining frame the weight
+    # is exactly zero, so both sides of the cut come from the same original.
+    ramp = max(1, min(round(fps * .3), edited - 1))
+    distance = f'{edited - 1}-T*{fps}' if prefix else f'T*{fps}'
+    weight = f"st(0,clip(({distance})/{ramp},0,1));ld(0)*ld(0)*(3-2*ld(0))"
+    base = (f"scale={target['width']}:{target['height']},setsar=1,format=yuv420p,"
+            f"fps={fps},tpad=stop_mode=clone:stop_duration={_number(1/fps)},"
+            f"trim=end_frame={total},split=2[whole_edit][whole_keep]")
+    order = '[edited][retained]' if prefix else '[retained][edited]'
+    graph = (
+        f"[1:v:0]{base};"
+        f"[whole_edit]trim=start_frame={start}:end_frame={end},setpts=PTS-STARTPTS[original];"
+        f"[whole_keep]trim=start_frame={keep_start}:end_frame={keep_end},setpts=PTS-STARTPTS[retained];"
+        f"[0:v:0]{_native_filter(probe_video(generated), plan)}[generated];"
+        f"[original][generated]blend=all_expr='A+(B-A)*({weight})':shortest=1[edited];"
+        f"{order}concat=n=2:v=1:a=0,setpts=PTS-STARTPTS[video]"
+    )
+    return _render_final([generated], source, output, source_meta, graph, keep_audio, profile)
 
 
 def finalize_spatial(
@@ -342,11 +435,16 @@ def finalize_spatial(
     source: Path,
     output: Path,
     keep_audio: bool = True,
+    profile: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Export the 1080p/30fps profile with the source timeline and optional audio."""
     generated, source = (_source_file(path) for path in (generated, source))
     source_meta, generated_meta = probe_video(source), probe_video(generated)
-    target_meta = output_video_meta(source_meta)
+    target_meta = output_video_meta(source_meta, profile)
+    if (profile or {}).get("generationPolicy") == "native":
+        plan = native_generation_plan(source_meta, profile, source_meta['duration'])
+        graph = '[0:v:0]' + _native_filter(generated_meta, plan) + '[video]'
+        return _render_final([generated], source, output, source_meta, graph, keep_audio, profile)
     # The model aligns dimensions to its spatial grid. Scale back to the source
     # aspect ratio at the output size so alignment does not introduce black bars.
     graph = (
@@ -355,4 +453,20 @@ def finalize_spatial(
                              stretch=True, stretch_geometry=True)
         + "[video]"
     )
-    return _render_final([generated], source, output, source_meta, graph, keep_audio)
+    return _render_final([generated], source, output, source_meta, graph, keep_audio, profile)
+
+
+def prepare_spatial_interval(source: Path, directory: Path, direction: str, cut_seconds: float) -> dict[str, Any]:
+    """Keep the untouched interval and supply only the edited interval to Comfy."""
+    media = prepare_temporal(source, directory, direction, cut_seconds)
+    meta = probe_video(source)
+    start = 0 if direction == "prefix" else cut_seconds
+    end = cut_seconds if direction == "prefix" else meta["duration"]
+    target = _task_output(directory, "target_video.mp4")
+    _run_ffmpeg(["-i", str(source), "-map", "0:v:0", "-an", "-vf",
+                 f"trim=start={_number(start)}:end={_number(end)},setpts=PTS-STARTPTS,fps={_fps_argument(meta)}",
+                 *_video_encoding(meta), str(target)], duration=end-start, action="裁切区域替换时段")
+    actual = probe_video(target)
+    if abs(actual["duration"] - (end-start)) > max(2/meta["fps"], 0.075):
+        raise RuntimeError("区域替换时段裁切时长异常。")
+    return {**media, "target_video": str(target)}

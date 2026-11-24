@@ -397,6 +397,7 @@ for (const mode of ["suffix", "mixed"]) test(`${mode} single flow accepts an emp
     return {flow: {id: "tail-optional", mode: body.mode, status: "draft", inputs: body, steps: []}};
   }, {realFlows: true});
   h.$("flowInputMode").value = "single"; h.$("flowMode").value = mode; h.$("flowTemporalMode").value = "suffix";
+  h.$("flowMixedScope").value = "legacy";
   h.$("flowVideoPath").value = "/videos/a.mp4";
   h.$("flowReferencePath").value = mode === "mixed" ? "/images/a.png" : "";
   h.flowApi.updateCreateFields();
@@ -432,6 +433,7 @@ for (const mode of ["suffix", "mixed"]) test(`${mode} directory batch starts wit
     throw new Error(`Unexpected request: ${url}`);
   }, {realFlows: true});
   h.$("flowMode").value = mode; h.$("flowTemporalMode").value = "suffix";
+  h.$("flowMixedScope").value = "legacy";
   if (mode === "suffix") h.$("batchDir-references").value = "";
   h.flowApi.updateCreateFields();
   assert.equal(h.$("flowEndPath").required, false);
@@ -498,4 +500,28 @@ test("suffix CSV template leaves end images empty for automatic extraction", asy
   assert.equal(row.endImagePath, "");
   assert.equal(row.referenceImagePath, "");
   assert.deepEqual(plain(h.api.validateRows({rows: [{values: row}]}, h.defaults)[0].errors), []);
+});
+const parameterCase = "regional mixed flow submits duration and independent export settings";
+test(parameterCase, async () => {
+  const h = harness(({body}) => ({flow: {id:"regional", mode:body.mode, inputs:body, status:"draft", steps:[]}}), {realFlows:true});
+  h.$("flowInputMode").value="single"; h.$("flowMode").value="mixed"; h.$("flowTemporalMode").value="suffix";
+  h.$("flowCutMode").value="duration"; h.$("flowReplacementSeconds").value="2";
+  h.$("flowOutputShortSide").value="480"; h.$("flowOutputFps").value="60";
+  h.$("flowGenerationLongSide").value="512"; h.$("flowGenerationFps").value="16";
+  h.$("flowExpectedSourceSeconds").value="10"; h.$("flowEndPath").value="/unused.png";
+  h.flowApi.updateCreateFields();
+  assert.equal(h.$("flowEndField").hidden,true);
+  assert.equal(h.$("flowReplacementSeconds").disabled,false);
+  assert.match(h.$("flowRecipe").innerHTML,/接回未修改原片段/);
+  await h.flowApi.createFlow({preventDefault(){}});
+  const body=h.calls[0].body;
+  assert.equal(body.mixedScope,"region"); assert.equal(body.replacementSeconds,2);
+  assert.equal(body.outputFps,60); assert.equal(body.generationFps,null); assert.equal(body.outputShortSide,480);
+  assert.equal(body.generationPolicy,"native"); assert.equal(body.generationLongSide,null);
+  assert.equal(body.expectedSourceSeconds,10); assert.equal(body.endImagePath,"");
+  const parsed=h.api.parseCsv("videoPath,replacementSeconds,outputShortSide,outputFps\n/a.mp4,8,1080,24");
+  const rows=h.api.validateRows(parsed,{...body, referenceImagePath:"/ref.png"});
+  assert.equal(rows[0].effective.cutMode,"duration"); assert.equal(rows[0].errors.length,0);
+  const invalid=h.api.validateRows(h.api.parseCsv("videoPath,outputFps\n/a.mp4,0"),{...body, referenceImagePath:"/ref.png"});
+  assert.match(invalid[0].errors.join(" "),/模型生成帧率/);
 });

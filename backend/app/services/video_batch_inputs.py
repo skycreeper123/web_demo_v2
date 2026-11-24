@@ -158,9 +158,10 @@ def match_batch_inputs(payload: dict[str, Any]) -> dict[str, Any]:
             choose("referenceImagePath", ["references"])
             choose("referenceAlt1Path", ["references"], "referenceAlt1")
             choose("referenceAlt2Path", ["references"], "referenceAlt2")
-        if direction == "prefix":
+        regional = recipe == "mixed" and defaults.get("mixedScope") == "region"
+        if direction == "prefix" and not regional:
             choose("startImagePath", ["startImages"] + (["references"] if recipe == "prefix" else []))
-        elif direction == "suffix":
+        elif direction == "suffix" and not regional:
             choose("endImagePath", ["endImages"] + (["references"] if recipe == "suffix" else []))
         can_create = not issues
         needs_upload = any(not asset["path"] for asset in assets.values())

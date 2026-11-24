@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Prompt Tool Studio</title>
+  <title>视频创作工作台</title>
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
@@ -11,14 +11,15 @@
   <main class="page-shell">
     <header class="topbar card">
       <div class="topbar-left">
-        <div class="brand-mark">PT</div>
+        <div class="brand-mark" aria-hidden="true">▶</div>
         <div>
-          <p class="eyebrow">Prompt Tool Studio</p>
+          <p class="eyebrow">VIDEO STUDIO / 视频创作</p>
           <h1 id="viewTitle">首页</h1>
           <p id="viewSubtitle" class="subtle">统一入口，覆盖 Prompt 与视频剪辑。</p>
         </div>
       </div>
       <div class="topbar-actions">
+        <button id="navFlowsBtn" class="btn btn-primary" type="button">视频工作台</button>
         <button id="navHomeBtn" class="btn btn-ghost">首页</button>
         <button id="navBackBtn" class="btn btn-ghost">返回</button>
         <button id="shutdownAppBtn" class="btn btn-ghost">退出</button>
@@ -33,7 +34,7 @@
               <p class="panel-kicker">Video Flows</p>
               <h2>视频流程工作台</h2>
               <p>把一条视频的替换、生成、剪辑保存在同一个流程里。</p>
-              <ul class="feature-list"><li>前景 / 背景替换</li><li>前段 / 后段替换与首尾帧衔接</li><li>先空间、再时间的混合替换</li></ul>
+              <ul class="feature-list"><li>前景 / 背景替换</li><li>前段 / 后段替换与首尾帧衔接</li><li>指定时段与区域的混合替换</li></ul>
               <div class="feature-actions"><button id="goVideoFlowsBtn" class="btn btn-primary">进入流程工作台</button></div>
             </div>
             <div class="module-overview card-shell">
@@ -48,12 +49,12 @@
           <div class="feature-layout">
             <div class="feature-copy">
               <p class="panel-kicker">Main Module</p>
-              <h2>Prompt 生成工作台</h2>
-              <p>统一管理 3 个 Prompt 模块，后续可继续扩展。</p>
+              <h2>提示词配置与调试</h2>
+              <p>管理视频流程使用的提示词，也可单独调试输出。</p>
               <ul class="feature-list">
                 <li>图片 / 图生图 / 视频 Prompt</li>
-                <li>输入、配置、运行、输出独立</li>
-                <li>新模块可直接接入</li>
+                <li>配置生成服务与提示词模板</li>
+                <li>查看和调整生成结果</li>
               </ul>
               <div class="feature-actions">
                 <button id="goPromptStudioBtn" class="btn btn-primary">进入</button>
@@ -77,11 +78,11 @@
           <div class="feature-layout">
             <div class="feature-copy">
               <p class="panel-kicker">Batch Editing</p>
-              <h2>视频剪辑工作台</h2>
-              <p>集成 `batch_editing`，本地路径直连处理。</p>
+              <h2>素材处理工具</h2>
+              <p>按需裁切、合并视频，或提取首尾帧。</p>
               <ul class="feature-list">
                 <li>按秒 / 按比例</li>
-                <li>ffmpeg / OpenCV</li>
+                <li>预览处理结果</li>
                 <li>双文件夹合并</li>
                 <li>首帧 / 尾帧提取</li>
               </ul>
@@ -115,12 +116,12 @@
           <div class="feature-layout">
             <div class="feature-copy">
               <p class="panel-kicker">ComfyUI</p>
-              <h2>本地 Comfy 通信工作台</h2>
-              <p>连接本机自托管 ComfyUI，提交工作流、监听执行并回收结果。</p>
+              <h2>生成服务配置</h2>
+              <p>检查 ComfyUI 连接，管理工作流并查看执行结果。</p>
               <ul class="feature-list">
-                <li>本地路径投递输入图片 / 视频</li>
-                <li>选择工作流模板，自动生成输入表单</li>
-                <li>健康检查 / 运行 / 取消 / 重试</li>
+                <li>选择图片与视频素材</li>
+                <li>选择工作流并填写参数</li>
+                <li>连接检查与执行记录</li>
               </ul>
               <div class="feature-actions">
                 <button id="goComfyStudioBtn" class="btn btn-primary">进入</button>
@@ -150,8 +151,9 @@
     </section>
 
     <section id="videoFlowsView" class="view" hidden>
+      <div class="workspace-heading"><div><span class="workspace-label">创作空间</span><p>准备素材，定义替换范围，查看每一步结果。</p></div><div id="flowOverview" class="workspace-counts" aria-label="单条流程统计"></div><button id="flowLibraryToggle" class="btn btn-ghost" type="button" aria-expanded="false" aria-controls="flowLibrary">任务与配置</button></div>
       <div class="flow-workspace">
-        <aside class="flow-sidebar">
+        <aside id="flowLibrary" class="flow-sidebar">
           <article class="card panel">
             <div class="section-header"><h2>我的批次</h2><button id="batchNewBtn" class="btn btn-primary" type="button">新建批次</button></div>
             <div class="flow-history-tools"><span class="panel-note">同一种流程，批量处理素材</span><button id="batchRefreshListBtn" class="btn btn-ghost" type="button">刷新</button></div>
@@ -160,24 +162,49 @@
           <article class="card panel">
             <div class="section-header"><h2>我的流程</h2><button id="flowNewBtn" class="btn btn-primary" type="button">新建</button></div>
             <div class="flow-history-tools"><span class="panel-note">流程保存在服务器</span><button id="flowRefreshListBtn" class="btn btn-ghost" type="button">刷新</button></div>
+            <div class="flow-history-filters"><label><span class="sr-only">搜索单条流程</span><input id="flowHistorySearch" class="input" type="search" placeholder="搜索流程名称…" /></label><label><span class="sr-only">按状态筛选单条流程</span><select id="flowHistoryFilter" class="input"><option value="all">全部状态</option><option value="running">运行中</option><option value="completed">已完成</option><option value="failed">失败</option><option value="draft">待执行</option><option value="stopped">已停止</option></select></label></div>
+            <p id="flowHistoryCount" class="panel-note"></p>
             <div id="flowHistory" class="flow-history" aria-label="已保存的视频流程"><p class="panel-note">进入后加载流程。</p></div>
           </article>
-          <article class="card panel flow-help"><h2>使用方式</h2><p class="panel-note">先创建流程，再执行下一步。检查提示词和中间结果满意后，可连续执行剩余步骤。</p><p class="panel-note">每次自动生成读取对应模块已保存的 API、System Prompt 与 User Prompt，并在 User Prompt 末尾补充本步范围、素材顺序和时长。不使用模拟结果。</p><p class="panel-note">空间替换用视频模块，新首图用图生图模块，首尾过渡用 I2V 模块。也可从每个提示词步骤直接进入对应配置。</p><div class="flow-run-actions"><button id="flowPromptConfigBtn" class="btn btn-ghost" type="button" data-flow-prompt-config="video">视频 Prompt 配置</button><button class="btn btn-ghost" type="button" data-flow-prompt-config="image_edit">图生图 Prompt 配置</button><button class="btn btn-ghost" type="button" data-flow-prompt-config="image">I2V Prompt 配置</button></div><p class="panel-note">全局配置修改后，已生成提示词保持不变；需重跑提示词步骤及后续步骤。</p></article>
+          <article class="card panel flow-help"><details><summary>提示词与辅助配置</summary><p class="panel-note">自动提示词使用对应模块已保存的配置。手动模式可在创建后编辑每一步提示词。</p><div class="flow-run-actions"><button id="flowPromptConfigBtn" class="btn btn-ghost" type="button" data-flow-prompt-config="video">视频提示词配置</button><button class="btn btn-ghost" type="button" data-flow-prompt-config="image_edit">图生图配置</button><button class="btn btn-ghost" type="button" data-flow-prompt-config="image">I2V 配置</button></div><p class="panel-note">配置修改后，已保存的提示词不会自动改变。</p></details></article>
         </aside>
         <div class="flow-main">
           <div id="flowNotice" class="flow-notice" role="status" aria-live="polite" hidden></div>
           <article id="flowCreatePanel" class="card panel">
             <div class="section-header"><div><p class="panel-kicker">Create a Flow</p><h2 id="flowCreateTitle">创建视频流程</h2></div><span id="flowCreateBadge" class="chip chip-soft">一条原视频，一个流程</span></div>
             <form id="flowCreateForm">
+              <section class="flow-form-section" aria-labelledby="flowSetupHeading"><div class="flow-section-heading"><span>01</span><div><h3 id="flowSetupHeading">替换方式</h3><p>选择处理方式与需要修改的范围。</p></div></div>
               <label class="prompt-field"><span>输入方式</span><select id="flowInputMode" class="input"><option value="batch" selected>批量素材 · 文件夹自动匹配</option><option value="single">单条素材</option></select></label>
               <div class="form-grid">
                 <label class="prompt-field"><span>流程名称（可选）</span><input id="flowName" class="input" maxlength="120" placeholder="例如：镜头 01 · 前段替换" /></label>
-                <label class="prompt-field"><span>替换方式</span><select id="flowMode" class="input"><option value="spatial">局部空间替换</option><option value="prefix">局部时间 · 替换前段</option><option value="suffix">局部时间 · 替换后段</option><option value="mixed">混合替换 · 先空间后时间</option></select></label>
-                <label id="flowSpatialField" class="prompt-field"><span>空间替换区域</span><select id="flowSpatialTarget" class="input"><option value="foreground">前景 / 主体</option><option value="background">背景</option></select></label>
-                <label id="flowTemporalField" class="prompt-field" hidden><span>随后替换哪一段</span><select id="flowTemporalMode" class="input"><option value="prefix">替换前段</option><option value="suffix">替换后段</option></select></label>
+                <label class="prompt-field"><span>替换方式</span><select id="flowMode" class="input"><option value="spatial">局部空间替换</option><option value="prefix">局部时间 · 替换前段</option><option value="suffix">局部时间 · 替换后段</option><option value="mixed">混合替换 · 时间与区域</option></select></label>
+                <label id="flowSpatialField" class="prompt-field"><span>空间替换区域</span><select id="flowSpatialTarget" class="input"><option value="foreground">人物替换 · 公开版</option><option value="background">背景替换 · 公开版</option></select></label>
+                <label id="flowTemporalField" class="prompt-field" hidden><span>替换哪一段</span><select id="flowTemporalMode" class="input"><option value="prefix">替换前段</option><option value="suffix">替换后段</option></select></label>
+                <label id="flowMixedField" class="prompt-field" hidden><span>混合处理方式</span><select id="flowMixedScope" class="input"><option value="region">指定时段内的指定区域（方案）</option><option value="legacy">全程空间处理后再重做一段（原流程）</option></select></label>
               </div>
               <div id="flowRecipe" class="flow-recipe"></div>
-              <p class="panel-note">成片规格：1080p · 30 fps，保留原视频比例与时长。</p>
+              <div id="flowCutField" hidden>
+                  <label class="prompt-field"><span>替换范围</span><select id="flowCutMode" class="input"><option value="percent" selected>按视频比例</option><option value="duration">直接填写替换时长</option><option value="seconds">按秒设置切点</option></select></label>
+                  <label id="flowDurationField" class="prompt-field" hidden><span>替换时长（秒）</span><input id="flowReplacementSeconds" class="input" type="number" min="0" step="any" placeholder="例如 2、5、8" disabled /><small class="panel-note">前段替换前 N 秒，后段替换后 N 秒；必须短于原片时长。</small></label>
+                  <label id="flowPercentField" class="prompt-field"><span id="flowPercentLabel">替换比例（%）</span><input id="flowReplacePercent" class="input" type="number" min="0" max="100" step="any" value="30" placeholder="例如 30" /><small id="flowPercentHint" class="panel-note">比例须大于 0、小于 100；每条视频按自身时长计算。</small></label>
+                  <label id="flowSecondsField" class="prompt-field" hidden><span>切点（从视频开始计算，秒）</span><input id="flowCutSeconds" class="input" type="number" min="0" step="any" placeholder="例如 3.5" disabled /><small class="panel-note">前段替换切点之前，后段替换切点之后；切点须大于 0 且小于原视频时长。</small></label>
+                </div>
+              </section>
+              <section class="flow-form-section" aria-labelledby="flowSpecHeading"><div class="flow-section-heading"><span>02</span><div><h3 id="flowSpecHeading">生成规格</h3><p>直接用于模型生成，也可以手动填写。</p></div></div>
+              <div class="flow-presets"><div role="group" aria-label="快捷选择生成分辨率"><span>分辨率</span><button type="button" data-spec-field="flowOutputShortSide" data-spec-value="480">480p</button><button type="button" data-spec-field="flowOutputShortSide" data-spec-value="1080">1080p</button></div><div role="group" aria-label="快捷选择生成帧率"><span>帧率</span><button type="button" data-spec-field="flowOutputFps" data-spec-value="16">16 fps</button><button type="button" data-spec-field="flowOutputFps" data-spec-value="24">24 fps</button><button type="button" data-spec-field="flowOutputFps" data-spec-value="60">60 fps</button></div></div>
+              <div class="form-grid">
+                <label class="prompt-field"><span>模型生成分辨率（短边像素）</span><input id="flowOutputShortSide" class="input" type="number" min="64" max="2160" step="1" value="1080" list="flowResolutionOptions" required /><datalist id="flowResolutionOptions"><option value="480"></option><option value="1080"></option></datalist><small class="panel-note">例如 480 或 1080，直接用于模型生成；导出仅裁去对齐边缘。</small></label>
+                <label class="prompt-field"><span>模型生成帧率（fps）</span><input id="flowOutputFps" class="input" type="number" min="1" max="60" step="1" value="30" list="flowFpsOptions" required /><datalist id="flowFpsOptions"><option value="16"></option><option value="24"></option><option value="30"></option><option value="60"></option></datalist></label>
+                <label class="prompt-field"><span>原片要求时长（秒，可选）</span><input id="flowExpectedSourceSeconds" class="input" type="number" min="0.1" max="3600" step="any" placeholder="方案为 10；留空不限" /><small class="panel-note">执行前检查，不自动裁剪；成片保持实际原片时长。</small></label>
+              </div>
+              <details hidden><summary>旧版独立生成规格</summary><div class="form-grid">
+                <label class="prompt-field"><span>生成长边像素</span><input id="flowGenerationLongSide" class="input" type="number" min="256" max="2048" step="1" placeholder="留空使用流程默认规格" /></label>
+                <label class="prompt-field"><span>生成帧率（fps）</span><input id="flowGenerationFps" class="input" type="number" min="1" max="60" step="1" placeholder="留空使用流程默认帧率" /></label>
+              </div><p class="panel-note">成片与生成规格分别设置。导出会缩放和转换帧率，不增加原生细节或进行 AI 补帧。更高生成规格需要更多显存和时间。</p></details>
+              <p id="flowGenerationHint" class="panel-note">按所选分辨率和帧率实际生成；尺寸或帧数不足会报错，不通过放大、补帧或变速补齐。</p>
+              <p id="flowComputeHint" class="flow-compute-hint" hidden>1080p · 60 fps 计算量较大。当前 vGPU 的 2 秒片段实测约 40–52 分钟，具体耗时随流程与片段长度变化。</p>
+              </section>
+              <section class="flow-form-section" aria-labelledby="flowAssetsHeading"><div class="flow-section-heading"><span>03</span><div><h3 id="flowAssetsHeading">准备素材</h3><p>上传文件，或填写服务器上已有素材的路径。</p></div></div>
               <section id="batchImportPanel" class="batch-import-panel" hidden>
                 <div class="section-header"><div><h2>准备素材目录</h2><p class="panel-note">视频与图片按同名自动成组，生成数量来自实际素材，无需填写次数或整理中间 CSV。</p></div></div>
                 <label class="prompt-field"><span>素材来源</span><select id="batchMaterialSource" class="input"><option value="directories">服务器上的素材目录</option><option value="files">浏览器选择文件夹并上传</option><option value="csv">高级：CSV 素材表</option></select></label>
@@ -207,17 +234,17 @@
                 <div id="flowStartField" class="flow-source-field" hidden><label class="prompt-field" for="flowStartPath"><span>新首图（可选）</span><input id="flowStartPath" class="input" placeholder="已有新首图可填写；留空由 Qwen 根据原首帧生成" /></label><label class="flow-upload-label">或上传新首图<input type="file" accept=".png,.jpg,.jpeg,.webp,.bmp" data-flow-upload="flowStartPath" /></label><small id="flowStartPathUploadStatus" class="panel-note">留空时，请在下方描述新首图和运动需求。</small><div id="flowStartPathPreview" class="flow-source-preview"></div></div>
                 <div id="flowEndField" class="flow-source-field" hidden><label class="prompt-field" for="flowEndPath"><span>尾图覆盖（可选）</span><input id="flowEndPath" class="input" placeholder="留空自动取原片末帧；填写图片路径可覆盖" /></label><label class="flow-upload-label">或上传尾图覆盖默认结束画面<input type="file" accept=".png,.jpg,.jpeg,.webp,.bmp" data-flow-upload="flowEndPath" /></label><small id="flowEndHint" class="panel-note">默认自动取原视频最后一帧，保持结束画面；无需额外准备尾图。</small><small id="flowEndPathUploadStatus" class="panel-note"></small><div id="flowEndPathPreview" class="flow-source-preview"></div></div>
               </div>
+              </section>
+              <section class="flow-form-section" aria-labelledby="flowPromptHeading"><div class="flow-section-heading"><span>04</span><div><h3 id="flowPromptHeading">编辑需求</h3><p>描述替换内容和需要保留的部分。</p></div></div>
               <div class="form-grid">
-                <div id="flowCutField" hidden>
-                  <label class="prompt-field"><span>替换范围</span><select id="flowCutMode" class="input"><option value="percent" selected>按视频比例</option><option value="seconds">按秒设置切点</option></select></label>
-                  <label id="flowPercentField" class="prompt-field"><span id="flowPercentLabel">替换比例（%）</span><input id="flowReplacePercent" class="input" type="number" min="0" max="100" step="any" value="30" placeholder="例如 30" /><small id="flowPercentHint" class="panel-note">比例须大于 0、小于 100；每条视频按自身时长计算。</small></label>
-                  <label id="flowSecondsField" class="prompt-field" hidden><span>切点（从视频开始计算，秒）</span><input id="flowCutSeconds" class="input" type="number" min="0" step="any" placeholder="例如 3.5" disabled /><small class="panel-note">前段替换切点之前，后段替换切点之后；切点须大于 0 且小于原视频时长。</small></label>
-                </div>
                 <label class="prompt-field"><span>提示词来源</span><select id="flowPromptSource" class="input"><option value="ai">自动生成 · 读取对应模块配置</option><option value="manual">手动填写 · 逐步编辑提示词</option></select><small id="flowPromptSourceHint" class="panel-note">每次自动生成读取对应模块已保存的 API、System Prompt 与 User Prompt；缺少有效配置时会给出错误。</small></label>
               </div>
               <label class="prompt-field"><span>编辑需求</span><textarea id="flowInstruction" class="textarea flow-instruction" rows="3" placeholder="描述替换内容、新首图的画面和动作，或首尾画面之间的运动方向。"></textarea></label>
-              <div class="flow-create-footer"><label class="toggle"><input id="flowKeepAudio" type="checkbox" checked /> 保留原视频声音</label><button id="flowCreateBtn" class="btn btn-primary" type="submit">创建流程</button></div>
+              <label class="toggle"><input id="flowKeepAudio" type="checkbox" checked /> 保留原视频声音</label>
+              </section>
+              <div class="flow-submit-dock"><div class="flow-create-footer"><div><span class="workspace-label">本次设置</span><p id="flowDraftSummary" aria-live="polite"></p></div><button id="flowCreateBtn" class="btn btn-primary" type="submit">创建流程</button></div>
               <p id="flowCreateNote" class="panel-note">创建只保存素材与步骤。点击执行后才开始生成。</p>
+              </div>
             </form>
           </article>
           <article id="batchPreparationPanel" class="card panel" hidden><h2>素材准备进度</h2><pre id="batchPreparationLogs" class="log-box" aria-live="polite"></pre></article>
@@ -237,6 +264,9 @@
               <div class="section-header"><div><p class="panel-kicker">Saved Flow</p><h2 id="flowDetailTitle">视频流程</h2><p id="flowDetailMeta" class="panel-note"></p></div><span id="flowStatus" class="flow-status"></span></div>
               <div class="progress-track"><div id="flowProgress" class="progress-fill"></div></div>
               <p id="flowProgressText" class="panel-note" aria-live="polite"></p>
+              <div id="flowSpecSummary" class="flow-spec-summary"></div>
+              <div id="flowStepNav" class="flow-step-nav" aria-label="步骤导航"></div>
+              <p id="flowLiveStatus" class="flow-live-status" aria-live="polite" hidden></p>
               <div class="flow-run-actions"><button id="flowNextBtn" class="btn btn-primary" type="button">执行下一步</button><button id="flowRunAllBtn" class="btn btn-ghost" type="button">连续执行</button><button id="flowStopBtn" class="btn btn-ghost" type="button" hidden>当前步骤结束后停止</button><button id="flowRefreshBtn" class="btn btn-ghost" type="button">刷新状态</button><button id="flowBackBatchBtn" class="btn btn-ghost" type="button" hidden>返回所属批次</button></div>
               <p id="flowRunHint" class="panel-note"></p>
               <details class="flow-input-details"><summary>查看本次素材与需求</summary><div id="flowInputSummary"></div></details>

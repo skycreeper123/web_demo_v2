@@ -22,6 +22,18 @@ from web_demo.backend.app.services import video_flow_service as flows
 
 
 class VideoBatchTests(unittest.TestCase):
+    def test_profile_and_duration_overrides_are_saved_and_exported_for_each_row(self):
+        payload = self.payload(2, mode="suffix", cutMode="duration", replacementSeconds=2, outputShortSide=1080, outputFps=24)
+        payload["rows"][1].update(replacementSeconds=8, outputShortSide=480, outputFps=60)
+        batch = batches.create_batch(payload)
+        for row, size, fps, seconds in zip(batch["rows"], (1080, 480), (24, 60), (2, 8)):
+            inputs = flows.get_flow(row["flowId"])["inputs"]
+            self.assertEqual((inputs["outputShortSide"], inputs["outputFps"], inputs["replacementSeconds"]), (size, fps, seconds))
+        with batches.resolve_manifest(batch["id"]).open(encoding="utf-8-sig", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        self.assertEqual(rows[1]["outputFps"], "60")
+        self.assertEqual(float(rows[1]["replacementSeconds"]), 8)
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

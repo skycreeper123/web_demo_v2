@@ -1,7 +1,7 @@
 const VIEW_META = {
   home: {
     title: "首页",
-    subtitle: "统一入口，覆盖 Prompt 与视频剪辑。",
+    subtitle: "在视频工作台完成创作，按需进入提示词与辅助工具。",
   },
   promptStudio: {
     title: "Prompt 生成工作台",
@@ -2694,6 +2694,7 @@ async function openVideoOutput() {
 
 function bindEvents() {
   els.navHomeBtn.addEventListener("click", () => setView("home"));
+  document.getElementById("navFlowsBtn").addEventListener("click", () => setView("videoFlows"));
   els.navBackBtn.addEventListener("click", () => setView("home"));
   els.shutdownAppBtn.addEventListener("click", shutdownApp);
   els.goPromptStudioBtn.addEventListener("click", () => setView("promptStudio", state.activePromptModule));

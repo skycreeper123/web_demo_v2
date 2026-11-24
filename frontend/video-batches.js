@@ -3,8 +3,10 @@
   const $ = id => document.getElementById(id);
   const flowUI = window.VideoFlowUI;
   const html = value => String(value ?? "").replace(/[&<>"']/g, char => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[char]));
-  const columns = ["name", "videoPath", "referenceImagePath", "referenceAlt1Path", "referenceAlt2Path", "startImagePath", "endImagePath", "cutMode", "replacePercent", "cutSeconds", "editInstruction"];
+  const parameterColumns = ["replacementSeconds", "outputShortSide", "outputFps", "generationLongSide", "generationFps", "expectedSourceSeconds"];
+  const columns = ["name", "videoPath", "referenceImagePath", "referenceAlt1Path", "referenceAlt2Path", "startImagePath", "endImagePath", "cutMode", "replacePercent", "cutSeconds", "editInstruction", ...parameterColumns];
   const labels = {name: "名称", videoPath: "原视频", referenceImagePath: "参考图", referenceAlt1Path: "补充参考图 1", referenceAlt2Path: "补充参考图 2", startImagePath: "新首图", endImagePath: "目标尾图", cutMode: "范围方式", replacePercent: "替换比例（%）", cutSeconds: "切点（秒）", editInstruction: "编辑需求"};
+  Object.assign(labels, {replacementSeconds: "替换时长（秒）", outputShortSide: "生成短边", outputFps: "生成 fps", generationLongSide: "生成长边", generationFps: "生成 fps", expectedSourceSeconds: "原片要求时长"});
   const roles = ["videos", "references", "startImages", "endImages"];
   const assetFields = ["videoPath", "referenceImagePath", "referenceAlt1Path", "referenceAlt2Path", "startImagePath", "endImagePath"];
   const videoExtensions = /\.(mp4|mov|avi|mkv|webm|m4v)$/i;
@@ -76,19 +78,22 @@
     return parsed.rows.map(row => {
       const effective = {...defaults};
       for (const [key, value] of Object.entries(row.values)) if (value !== "") effective[key] = value;
-      effective.cutMode = row.values.cutMode || (row.values.replacePercent !== undefined && row.values.replacePercent !== "" ? "percent" : row.values.cutSeconds !== undefined && row.values.cutSeconds !== "" ? "seconds" : defaults.cutMode || "seconds");
+      effective.cutMode = row.values.cutMode || (row.values.replacementSeconds !== undefined && row.values.replacementSeconds !== "" ? "duration" : row.values.replacePercent !== undefined && row.values.replacePercent !== "" ? "percent" : row.values.cutSeconds !== undefined && row.values.cutSeconds !== "" ? "seconds" : defaults.cutMode || "seconds");
       const errors = [];
       if (!effective.videoPath) errors.push("缺少原视频路径（本行或统一素材）");
       if (["spatial", "mixed"].includes(defaults.mode) && !effective.referenceImagePath) errors.push("缺少参考图（本行或统一素材）");
       const timingError = validateTiming(effective);
       if (timingError) errors.push(timingError);
+      const parameterError = flowUI.validateParameters?.(effective);
+      if (parameterError) errors.push(parameterError);
       return {...row, effective, errors};
     });
   }
   function validateTiming(inputs) {
     if (inputs.mode === "spatial") return "";
     const mode = inputs.cutMode || "seconds";
-    if (!["percent", "seconds"].includes(mode)) return "cutMode 只能是 percent（比例）或 seconds（秒）";
+    if (!["percent", "seconds", "duration"].includes(mode)) return "cutMode 只能是 percent（比例）、seconds（切点）或 duration（替换时长）";
+    if (mode === "duration" && (!Number.isFinite(Number(inputs.replacementSeconds)) || Number(inputs.replacementSeconds) <= 0)) return "替换时长须大于 0（本行或统一参数）";
     if (mode === "percent" && (!Number.isFinite(Number(inputs.replacePercent)) || Number(inputs.replacePercent) <= 0 || Number(inputs.replacePercent) >= 100)) return "替换比例须大于 0、小于 100（本行或统一参数）";
     if (mode === "seconds" && (!Number.isFinite(Number(inputs.cutSeconds)) || Number(inputs.cutSeconds) <= 0)) return "切点须大于 0（本行或统一参数）";
     return "";
@@ -142,6 +147,7 @@
     updateMaterialSource();
   }
   function activeRoles(defaults = flowUI.getDefaults()) {
+    if (defaults.mode === "mixed" && defaults.mixedScope === "region") return ["videos", "references"];
     const temporal = defaults.mode === "mixed" ? defaults.temporalMode : defaults.mode;
     return roles.filter(role => role === "videos" || role === "references" || role === "startImages" && temporal === "prefix" || role === "endImages" && temporal === "suffix");
   }
@@ -154,6 +160,7 @@
     $("batchCsvPanel").hidden = source !== "csv";
     const titles = {videos: "原视频目录 *", references: spatial ? "空间替换参考图目录" : temporal === "suffix" ? "尾图覆盖目录（可选）" : "新首图目录（可选）", startImages: "优先使用的新首图目录（可选）", endImages: "优先尾图覆盖目录（可选）"};
     $("batchRoleHint").textContent = spatial ? `原视频与空间参考图同名配对${temporal === "suffix" ? "；后段默认自动取空间处理后的末帧，保持处理后的结束画面。尾图目录或共用尾图仅用于手工覆盖，无需额外准备" : defaults.mode === "mixed" ? "；新首图可另选目录，缺省时自动生成" : ""}。` : temporal === "suffix" ? "只需视频目录即可替换后段，默认自动取原片末帧并保持结束画面。若需覆盖尾图，依次优先使用：优先尾图目录、同名尾图覆盖目录、共用尾图；全部留空则自动取帧。" : "同名图片作为可选新首图。可额外指定优先使用的新首图目录；未提供时由 Qwen 根据原首帧生成。";
+    if (defaults.mode === "mixed" && defaults.mixedScope === "region") $("batchRoleHint").textContent = "原视频与区域参考图同名配对；只处理指定前段或后段的指定区域，其余时段保留原画面。";
     for (const role of roles) {
       $(`batchRole-${role}`).hidden = !activeRoles(defaults).includes(role);
       $(`batchRoleTitle-${role}`).textContent = titles[role];
@@ -262,6 +269,8 @@
     if (!payload.directories.videos && !payload.files.videos.length) throw new Error("请提供原视频目录。生成数量由目录中的视频决定。");
     const timingError = validateTiming(defaults);
     if (timingError) throw new Error(timingError);
+    const parameterError = flowUI.validateParameters?.(defaults);
+    if (parameterError) throw new Error(parameterError);
     preparationLog(payload.inputMode === "files" ? `正在匹配 ${payload.files.videos.length} 个视频及所选图片…` : "正在扫描服务器目录并按文件名匹配…");
     const scan = await api("/api/video-batches/scan", payload);
     if (fingerprint !== creationFingerprint()) throw new Error("素材或统一设置已改变，请重新匹配后生成。");
@@ -323,6 +332,7 @@
         if (control.type === "checkbox") control.checked = !!value; else control.value = String(value ?? "");
       }
       if (values && !Object.prototype.hasOwnProperty.call(values, "flowCutMode") && Object.prototype.hasOwnProperty.call(values, "flowCutSeconds")) $("flowCutMode").value = "seconds";
+      if (values && values.flowMode === "mixed" && !Object.prototype.hasOwnProperty.call(values, "flowMixedScope")) $("flowMixedScope").value = "legacy";
     } catch {}
     flowUI.updateCreateFields();
     updateInputMode();
@@ -332,6 +342,8 @@
     const defaults = flowUI.getDefaults();
     const timed = defaults.mode !== "spatial", cutMode = defaults.cutMode || "seconds";
     const example = {name: "素材 001", videoPath: "/data/videos/001.mp4", referenceImagePath: ["spatial", "mixed"].includes(defaults.mode) ? "/data/references/001.png" : "", startImagePath: "", endImagePath: "", cutMode: timed ? cutMode : "", replacePercent: timed && cutMode === "percent" ? defaults.replacePercent ?? 30 : "", cutSeconds: timed && cutMode === "seconds" ? defaults.cutSeconds ?? 3 : "", editInstruction: ""};
+    for (const key of parameterColumns) example[key] = defaults[key] ?? "";
+    if (!timed || cutMode !== "duration") example.replacementSeconds = "";
     const escape = value => `"${String(value ?? "").replace(/"/g, '""')}"`;
     const content = "\uFEFF" + columns.join(",") + "\r\n" + columns.map(key => escape(example[key])).join(",") + "\r\n";
     const url = URL.createObjectURL(new Blob([content], {type: "text/csv;charset=utf-8"}));
@@ -438,7 +450,7 @@
       let rows;
       if (source === "csv") {
         if (!parseInput()) throw new Error("请修正素材表中的全部问题后再生成。");
-        rows = state.parsed.rows.map(row => Object.fromEntries(Object.entries(row.values).filter(([, value]) => value !== "").map(([key, value]) => [key, ["cutSeconds", "replacePercent"].includes(key) ? Number(value) : value])));
+        rows = state.parsed.rows.map(row => Object.fromEntries(Object.entries(row.values).filter(([, value]) => value !== "").map(([key, value]) => [key, ["cutSeconds", "replacePercent", ...parameterColumns].includes(key) ? Number(value) : value])));
         preparationLog(`CSV 检查通过：${rows.length} 组素材。`);
       } else {
         const scan = await scanMaterials(defaults, fingerprint);

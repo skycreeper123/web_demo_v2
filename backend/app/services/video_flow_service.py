@@ -30,12 +30,15 @@ from web_demo.backend.app.services import (
     image_edit_prompt_generator, prompt_generator, video_prompt_generator,
 )
 from web_demo.backend.app.services.comfyui_comm import run_comfy_job
+from web_demo.backend.app.services.comfyui_comm.server_client import ComfyServerClient
 from web_demo.backend.app.services.comfyui_comm.workflow_binder import resolve_template_payload
 from web_demo.backend.app.services.video_flow_media import (
-    assemble_video, finalize_spatial, prepare_temporal, probe_video,
+    assemble_native_region, assemble_video, finalize_spatial, prepare_temporal, prepare_spatial_interval, probe_video,
+    native_generation_plan, prepare_native_conditioning, validate_native_video,
 )
 from web_demo.backend.app.services.video_output_profile import (
-    VIDEO_FPS, generation_dimensions, generation_frames, output_video_meta,
+    VIDEO_FPS, PERSON_REPLACE_FPS, generation_dimensions, generation_frames,
+    output_video_meta, person_replacement_dimensions, validate_profile, PROFILE_FIELDS,
 )
 
 FLOW_KIND = "video_flow"
@@ -46,7 +49,8 @@ _BATCH_CLAIMS: dict[str, str] = {}
 _ID = re.compile(r"^[a-f0-9]{16}$")
 MODES = {"spatial": "局部空间替换", "prefix": "替换前段", "suffix": "替换后段", "mixed": "混合替换"}
 TEMPLATES = {
-    "spatial": {"key": "Wan视频编辑V5-简易-替换单人-最新V2版模型.json", "output": "1400"},
+    "spatial": {"key": "wan_animate_public_replace.json", "output": "40"},
+    "spatial_legacy": {"key": "Wan视频编辑V5-简易-替换单人-最新V2版模型.json", "output": "1400"},
     "first_image": {"key": "qwen2511图片编辑V1.json", "output": "144"},
     "motion": {"key": "wan2.2_14B_KJ版本_全功能.json", "output": "145"},
 }
@@ -174,12 +178,24 @@ def build_flow(payload: dict[str, Any]) -> dict[str, Any]:
     prompt_source = str(payload.get("promptSource") or "ai")
     if prompt_source not in {"ai", "manual"}:
         raise ValueError("提示词来源无效。")
-    cut_mode, percent, cut = "seconds", None, 0.0
+    mixed_scope = str(payload.get("mixedScope") or "legacy")
+    if mixed_scope not in {"legacy", "region"}:
+        raise ValueError("混合模式必须是 region（限定时段区域）或 legacy（原串联流程）。")
+    regional = mode == "mixed" and mixed_scope == "region"
+    cut_mode, percent, cut, replacement_seconds = "seconds", None, 0.0, None
     if is_temporal:
         cut_mode = str(payload.get("cutMode") or "seconds").strip()
-        if cut_mode not in {"percent", "seconds"}:
-            raise ValueError("替换范围必须选择按比例或按秒数。")
-        if cut_mode == "percent":
+        if cut_mode not in {"percent", "seconds", "duration"}:
+            raise ValueError("替换范围必须选择按比例或按秒数（切点 / 替换时长）。")
+        if cut_mode == "duration":
+            try:
+                replacement_seconds = float(payload.get("replacementSeconds"))
+            except (TypeError, ValueError) as exc:
+                raise ValueError("请填写大于 0 的替换时长。") from exc
+            if isinstance(payload.get("replacementSeconds"), bool) or not math.isfinite(replacement_seconds) or replacement_seconds <= 0:
+                raise ValueError("请填写大于 0 的替换时长。")
+            cut = None
+        elif cut_mode == "percent":
             try:
                 percent = float(payload.get("replacePercent"))
             except (TypeError, ValueError) as exc:
@@ -204,6 +220,8 @@ def build_flow(payload: dict[str, Any]) -> dict[str, Any]:
         "endImagePath": _input_path(payload.get("endImagePath"), "目标尾图", _IMAGE_SUFFIXES, False),
         "spatialTarget": spatial_target, "temporalMode": temporal, "cutMode": cut_mode,
         "replacePercent": percent, "cutSeconds": cut,
+        "replacementSeconds": replacement_seconds, "mixedScope": mixed_scope,
+        **validate_profile({**payload, "generationPolicy": payload.get("generationPolicy", "native")}),
         "editInstruction": str(payload.get("editInstruction") or "").strip()[:12000],
         "keepAudio": payload.get("keepAudio", True) is not False, "promptSource": prompt_source,
     }
@@ -233,18 +251,27 @@ def build_flow(payload: dict[str, Any]) -> dict[str, Any]:
             negativePrompt="闪烁，主体变形，身份漂移，画面跳变，文字水印，未指定区域改变",
             promptEdited=prompt_source == "manual", media=media, apiKind=api_kind)
 
+    if regional:
+        add("prepare_region", "裁切指定替换时段", "region_media", "只将指定前段或后段交给空间替换；其余时段保留原画面。")
     if spatial:
         instruction = (
             "根据参考图替换原视频的前景主体。保留原背景、镜头、动作轨迹、时间节奏和非目标物体，保持跨帧外观一致。"
             if spatial_target == "foreground" else
             "根据参考图替换原视频的背景环境。保留原视频的前景主体身份、外观、动作和时间节奏；仅重建背景，匹配透视、光线和遮挡关系。"
         )
-        spatial_media = ["source_video", "reference_image"]
+        spatial_media = ["target_video" if regional else "source_video", "reference_image"]
         spatial_media.extend(key for key in ("reference_alt_1", "reference_alt_2") if key in flow["artifacts"])
         prompt("spatial_prompt", "生成空间替换提示词", instruction, spatial_media, "video")
-        add("spatial_render", "生成空间替换视频", "comfy", "Wan 视频编辑 V5；使用 1080p / 30 fps 规格，按所选范围设置遮罩，并读取完整视频。",
-            role="spatial", promptStep="spatial_prompt", outputKey="spatial_video")
-    if is_temporal:
+        description = (
+            "公开版 WanAnimate 人物替换；自动跟踪主要人物，使用本流程保存的生成与成片规格。"
+            if spatial_target == "foreground" else
+            "公开版 WanAnimate 背景替换；反转人物遮罩生成背景，再合成原人物，使用本流程保存的生成与成片规格。"
+        )
+        add("spatial_render", "生成空间替换视频", "comfy", description,
+            role="spatial", promptStep="spatial_prompt", outputKey="spatial_video", sourceKey="target_video" if regional else "source_video")
+    if regional:
+        add("assemble_region", "接回原片并导出", "assemble", "仅替换指定时段内的区域，其他时段使用原视频，保持原总时长。")
+    elif is_temporal:
         add("prepare", "裁切并提取衔接帧", "media", "按切点保留原片段，提取实际保留片段的边界帧。",
             sourceKey="spatial_video" if spatial else "source_video")
         if temporal == "prefix" and not inputs["startImagePath"]:
@@ -257,11 +284,11 @@ def build_flow(payload: dict[str, Any]) -> dict[str, Any]:
         prompt("motion_prompt", "生成首尾帧过渡提示词",
                "按输入的第一张首图到第二张尾图生成连续视频。准确描述起始状态、结束状态和两者之间的动作过渡，保留主体身份与镜头连贯性；在尾帧处自然衔接，避免突然切镜或多余动作。",
                motion_media, "image")
-        add("motion_render", "双图生成替换片段", "comfy", "首图和尾图分别投递；使用 1080p / 30 fps 规格，生成长度按被替换片段计算。",
+        add("motion_render", "双图生成替换片段", "comfy", "首图和尾图分别投递；按保存的规格与替换时长生成。",
             role="motion", promptStep="motion_prompt", outputKey="replacement_video")
-        add("assemble", "拼接并导出成片", "assemble", "按替换方向拼接，保留画幅比例和原片时长，统一导出 1080p / 30 fps，并按设置恢复原音轨。")
+        add("assemble", "拼接并导出成片", "assemble", "按替换方向拼接，按保存的规格导出，保留画幅比例、原片时长并按设置恢复原音轨。")
     else:
-        add("finish", "导出空间替换成片", "assemble", "使用纯生成输出，保留画幅比例和原片时长，统一导出 1080p / 30 fps，并按设置恢复原音轨。")
+        add("finish", "导出空间替换成片", "assemble", "使用纯生成输出，按保存的成片规格导出，保留画幅比例、原片时长并按设置恢复原音轨。")
     return flow
 
 
@@ -310,7 +337,7 @@ def _invalidate(flow: dict[str, Any], index: int) -> None:
         step.update(status="pending", outputs=[], error="", jobId="")
         if step["kind"] == "prompt" and not step["settings"].get("promptEdited"):
             step["settings"]["prompt"] = ""
-    if any(step["id"] == "prepare" for step in flow["steps"][index:]):
+    if any(step["id"] in {"prepare", "prepare_region"} for step in flow["steps"][index:]):
         flow["media"] = {}
     flow.update(status="ready", error="")
 
@@ -442,7 +469,7 @@ def _build_prompt_request(flow: dict[str, Any], step: dict[str, Any], media_path
             if background else
             "本次替换前景：参考图提供目标主体；保留原背景、镜头和动作节奏。"
         )
-        labels = {"source_video": "原视频", "reference_image": "替换主参考图", "reference_alt_1": "补充参考图 1（外观细节参考）",
+        labels = {"source_video": "原视频", "target_video": "指定替换时段（原视频片段）", "reference_image": "替换主参考图", "reference_alt_1": "补充参考图 1（外观细节参考）",
                   "reference_alt_2": "补充参考图 2（外观细节参考）"}
         roles = [labels[key] for key in settings["media"]]
         context.append("补充参考图用于理解同一目标的外观细节，不是视频首帧或尾帧；空间生成仍以主参考图为主要条件。")
@@ -507,7 +534,7 @@ def _run_prompt(flow: dict[str, Any], step: dict[str, Any], directory: Path, log
     row = {"positive_prompt": prompt, "negative_prompt": negative, "image_path": "", "video_path": "",
            "start_image_path": "", "end_image_path": ""}
     if step["id"] == "spatial_prompt":
-        row.update(video_path=str(_path(flow, "source_video")), image_path=str(_path(flow, "reference_image")))
+        row.update(video_path=str(media_paths[0]), image_path=str(_path(flow, "reference_image")))
         for key, column in (("reference_alt_1", "reference_alt_1_path"), ("reference_alt_2", "reference_alt_2_path")):
             if key in flow["artifacts"]:
                 row[column] = str(_path(flow, key))
@@ -525,29 +552,49 @@ def _run_prompt(flow: dict[str, Any], step: dict[str, Any], directory: Path, log
     return [_artifact(step["id"], prompt_file, flow["id"]), _artifact(step["id"] + "_csv", csv_file, flow["id"]), *request_outputs]
 
 
+def _comfy_node_info(config: dict[str, Any], node_type: str) -> dict[str, Any]:
+    try:
+        return ComfyServerClient(config).get_object_info(node_type).get(node_type) or {}
+    except RuntimeError:
+        return {}
+
+
 def _run_comfy(flow: dict[str, Any], step: dict[str, Any], directory: Path, job_id: str,
                log: Callable[[str], None], update_job: Callable[..., Any]) -> list[dict[str, str]]:
     settings = step["settings"]
     role = settings["role"]
+    public_spatial = role == "spatial"
+    profile = flow["inputs"]
+    native = profile.get("generationPolicy") == "native" and role in {"spatial", "motion"}
+    native_region = native and public_spatial and settings.get('sourceKey') == 'target_video'
+    native_plan = None
     template = TEMPLATES[role]
     prompt_settings = _step(flow, settings["promptStep"])["settings"]
     form: dict[str, Any] = {"positive_prompt": prompt_settings["prompt"], "negative_prompt": prompt_settings.get("negativePrompt", "")}
     expected: dict[str, Any] = {}
     if role in {"spatial", "motion"}:
         source_meta = probe_video(_path(flow, "source_video"))
-        width, height = generation_dimensions(source_meta)
-        target_meta = output_video_meta(source_meta)
-        log(f"视频规格：生成 {width}×{height} / {VIDEO_FPS} fps，"
-            f"导出 {target_meta['width']}×{target_meta['height']} / {VIDEO_FPS} fps。")
+        width, height = person_replacement_dimensions(source_meta, profile) if public_spatial else generation_dimensions(source_meta, profile)
+        generation_fps = profile.get("generationFps") or (PERSON_REPLACE_FPS if public_spatial else VIDEO_FPS)
+        if native:
+            generation_fps = profile["outputFps"]
+        target_meta = output_video_meta(source_meta, profile)
+        log(f"视频规格：生成 {width}×{height} / {generation_fps} fps，"
+            f"导出 {target_meta['width']}×{target_meta['height']} / {target_meta['fps']} fps。")
     if role == "spatial":
-        form.update(image_ref=str(_path(flow, "reference_image")), video_ref=str(_path(flow, "source_video")))
-        expected = {"params.node_1437.invert_output": flow["inputs"]["spatialTarget"] == "background",
-                    "params.node_1412.frame_load_cap": 0, "params.node_1412.skip_first_frames": 0,
-                    "params.node_1412.force_rate": VIDEO_FPS,
-                    "params.node_1420.width": width, "params.node_1420.height": height,
-                    "params.node_1420.keep_proportion": "stretch",
-                    "params.node_1440.width": target_meta["width"],
-                    "params.node_1440.height": target_meta["height"]}
+        form.update(image_ref=str(_path(flow, "reference_image")), video_ref=str(_path(flow, settings.get("sourceKey", "source_video"))))
+        if native:
+            duration = (float(flow['media']['replacement_duration'])
+                        if settings.get('sourceKey') == 'target_video' else float(source_meta['duration']))
+            native_plan = native_generation_plan(source_meta, profile, duration)
+            conditioned = prepare_native_conditioning(Path(form['video_ref']), directory / 'model_conditions.mp4', native_plan)
+            form['video_ref'] = str(conditioned)
+        # Both regions use the same public model and full input interval.
+        expected = {"params.width": width, "params.height": height,
+                    "params.frame_limit": 0, "params.fps": generation_fps,
+                    "params.steps": 6, "params.node_2.skip_first_frames": 0,
+                    "params.node_2.select_every_nth": 1}
+        log("使用公开版 WanAnimate；完整读取本步骤输入时段，自动跟踪主要人物，按所选成片规格导出。")
     elif role == "first_image":
         form["image_ref"] = str(_path(flow, "original_first_frame"))
     else:
@@ -555,14 +602,18 @@ def _run_comfy(flow: dict[str, Any], step: dict[str, Any], directory: Path, job_
         form.update(start_image_ref=str(_path(flow, "start_image" if prefix else "boundary_frame")),
                     end_image_ref=str(_path(flow, "boundary_frame" if prefix else "target_end")))
         duration = float(flow["media"]["replacement_duration"])
-        frames = generation_frames(duration)
-        expected = {"params.node_162.value": frames, "params.node_145.frame_rate": VIDEO_FPS,
+        frames = generation_frames(duration, generation_fps)
+        if native:
+            native_plan = native_generation_plan(source_meta, profile, duration)
+            frames = native_plan['requested_frames']
+        expected = {"params.node_162.value": frames, "params.node_145.frame_rate": generation_fps,
                     "params.node_160.value": width, "params.node_161.value": height,
                     "params.node_223.keep_proportion": "pad_edge_pixel",
                     "params.node_246.width": target_meta["width"],
                     "params.node_246.height": target_meta["height"]}
-    # Fixed production recipes fail clearly if their graph was replaced or changed.
-    resolved = resolve_template_payload({"templateKey": template["key"]}, load_comfy_config())
+    # Fixed recipes fail clearly if their graph was replaced or changed.
+    comfy_config = load_comfy_config()
+    resolved = resolve_template_payload({"templateKey": template["key"]}, comfy_config)
     missing = set(expected) - set(resolved["bindings"])
     required_media = {key for key in form if key.endswith("_ref")}
     missing |= required_media - set(resolved["bindings"])
@@ -571,6 +622,85 @@ def _run_comfy(flow: dict[str, Any], step: dict[str, Any], directory: Path, job_
     form.update(expected)
     payload = {"inputMode": "direct", "templateKey": template["key"], "outputNodeId": template["output"],
                "formInputs": form, "defaultOutputPrefixBase": f"video_flows/{flow['id']}/{step['id']}/{step['attempts']}"}
+    if role in {"spatial", "motion"}:
+        # Intermediate clips may have no audio (in particular trimmed regional
+        # inputs). VHS lazily extracts audio when this edge is consumed and
+        # raises on silent files. The final media stage restores source audio.
+        graph = copy.deepcopy(resolved["workflow"])
+        replaced_nodes = set()
+        if native:
+            if public_spatial:
+                # Input already has exact padded dimensions and 4n+1 frames.
+                graph['2']['inputs']['format'] = 'None'
+                mask_draw = graph.get('17', {})
+                draw_inputs = mask_draw.get('inputs', {})
+                if (mask_draw.get('class_type') == 'DrawMaskOnImage' and draw_inputs.get('color') == '0, 0, 0'
+                        and draw_inputs.get('device', 'cpu') == 'cpu'
+                        and _comfy_node_info(comfy_config, 'UGCDrawBlackMask')):
+                    graph['17'] = {'class_type': 'UGCDrawBlackMask', 'inputs': {
+                        'image': draw_inputs['image'], 'mask': draw_inputs['mask']}}
+                    replaced_nodes.add('17')
+                    log('按小批次生成遮罩参考帧。')
+            else:
+                # Save the VAE decoded batch, bypass the old output resize.
+                if graph.get('246', {}).get('class_type') != 'ImageResizeKJv2':
+                    raise ValueError('时间替换模板输出结构已变化，无法确认原生输出。')
+                graph[template['output']]['inputs']['images'] = graph['246']['inputs']['image']
+                if profile['outputShortSide'] == 1080 and generation_fps == 60:
+                    sampler = _comfy_node_info(comfy_config, 'WanVideoSampler')
+                    rope_options = sampler.get('input', {}).get('optional', {}).get('rope_function', [[]])[0]
+                    if 'comfy_chunked' in rope_options:
+                        for node in graph.values():
+                            if node['class_type'] == 'WanVideoSampler' and node['inputs'].get('rope_function') == 'comfy':
+                                node['inputs']['rope_function'] = 'comfy_chunked'
+        if native_region:
+            target = profile['spatialTarget']
+            required = {'3': 'GetImageSizeAndCount', '10': 'OnnxDetectionModelLoader',
+                        '14': 'Sam2Segmentation', '15': 'GrowMaskWithBlur', '33': 'ImageFromBatch'}
+            if any(graph.get(key, {}).get('class_type') != kind for key, kind in required.items()) or {'18', '34'} & graph.keys():
+                raise ValueError('区域替换模板的人物遮罩或合成节点已变化。')
+            composite = {'original': ['3', 0], 'generated': ['33', 0], 'people': ['14', 0], 'target': target}
+            if target == 'background':
+                graph['14'] = {'class_type': 'UGCTrackedPeopleMask', 'inputs': {
+                    'image': ['3', 0], 'detector_model': ['10', 0], 'sam2_model': ['13', 0], 'fps': generation_fps}}
+                replaced_nodes.add('14')
+                graph['18'] = {'class_type': 'InvertMask', 'inputs': {'mask': ['14', 0]}}
+                graph['15']['inputs']['mask'] = ['18', 0]
+                composite.update(detector_model=['10', 0], original_boxes=['14', 1])
+            graph['34'] = {'class_type': 'UGCCompositeRegion', 'inputs': composite}
+            graph[template['output']]['inputs']['images'] = ['34', 0]
+            log('区域替换仅合成目标区域，并在切点接回同一条原片时间线。')
+        elif public_spatial and profile['spatialTarget'] == 'background':
+            # Invert before growing/blockifying: otherwise a wide halo of the
+            # original background is protected. Restore the original subject
+            # after generation with the fine mask, not the expanded edit mask.
+            required = {"14": "Sam2Segmentation", "15": "GrowMaskWithBlur",
+                        "3": "GetImageSizeAndCount", "33": "ImageFromBatch"}
+            if any(graph.get(key, {}).get("class_type") != kind for key, kind in required.items()) or "18" in graph or "34" in graph:
+                raise ValueError("公开版背景替换模板结构已变化，请检查人物遮罩及合成节点。")
+            graph["18"] = {"class_type": "InvertMask", "inputs": {"mask": ["14", 0]}}
+            graph["15"]["inputs"]["mask"] = ["18", 0]
+            graph["34"] = {"class_type": "ImageCompositeMasked", "inputs": {
+                "destination": ["33", 0], "source": ["3", 0], "mask": ["14", 0],
+                "x": 0, "y": 0, "resize_source": False}}
+            trim = graph["33"]["inputs"]
+            if native and trim.get("batch_index") == 0 and trim.get("length") == ["3", 3]:
+                node_type = "UGCCompositeBackground"
+                if _comfy_node_info(comfy_config, node_type):
+                    graph["34"] = {"class_type": node_type, "inputs": {
+                        "destination": trim["image"], "source": ["3", 0], "mask": ["14", 0]}}
+                    log("背景替换使用分批遮罩合成。")
+            graph[template["output"]]["inputs"]["images"] = ["34", 0]
+            log("背景替换：反转精细人物遮罩，并将原人物合成回生成背景。")
+        graph[template["output"]]["inputs"].pop("audio", None)
+        bindings = {}
+        for key, targets in resolved["bindings"].items():
+            remaining = [target for target in targets if str(target['node']) not in replaced_nodes
+                         or target['input'] in graph[str(target['node'])]['inputs']]
+            if remaining:
+                bindings[key] = remaining
+        payload.update(workflowJsonText=json.dumps(graph, ensure_ascii=False),
+                       bindingsJsonText=json.dumps(bindings, ensure_ascii=False))
     stage_job_id = f"{job_id}_{step['id']}_{step['attempts']:03d}"
     result = run_comfy_job(job_id=stage_job_id, payload=payload, log=log, progress=lambda *_: None, update_job=update_job)
     if result.get("status") != "completed" or not result.get("items"):
@@ -586,9 +716,21 @@ def _run_comfy(flow: dict[str, Any], step: dict[str, Any], directory: Path, job_
     wanted = _IMAGE_SUFFIXES if role == "first_image" else _VIDEO_SUFFIXES
     if not source.is_file() or source.suffix.lower() not in wanted:
         raise RuntimeError("指定的输出节点未返回此步骤需要的图片或视频。")
+    evidence = []
+    if native:
+        actual = probe_video(source)
+        record = directory / 'generation_spec.json'
+        spec = {'policy': 'native', 'requested': native_plan, 'actual': actual, 'template': template['key'],
+                'formInputs': form, 'ugc_conditioning_resampled': public_spatial}
+        if native_region:
+            spec['region_continuity'] = 'source-timeline-mask-v1'
+        record.write_text(json.dumps(spec, ensure_ascii=False, indent=2), encoding='utf-8')
+        validate_native_video(actual, native_plan)
+        evidence.append(_artifact(settings['outputKey'] + '_spec', record, flow['id']))
+        log(f"原生生成校验通过：{actual['width']}×{actual['height']} / {actual['fps']} fps / {actual['frames']} 帧；仅裁切对齐冗余。")
     target = directory / (settings["outputKey"] + source.suffix.lower())
     shutil.copy2(source, target)
-    return [_artifact(settings["outputKey"], target, flow["id"])]
+    return [_artifact(settings["outputKey"], target, flow["id"]), *evidence]
 
 
 def _execute_step(flow: dict[str, Any], step: dict[str, Any], job_id: str,
@@ -600,12 +742,16 @@ def _execute_step(flow: dict[str, Any], step: dict[str, Any], job_id: str,
         return _run_prompt(flow, step, directory, log)
     if step["kind"] == "comfy":
         return _run_comfy(flow, step, directory, job_id, log, update_job)
+    if step["kind"] == "region_media":
+        media = prepare_spatial_interval(_path(flow, "source_video"), directory, inputs["temporalMode"], inputs["cutSeconds"])
+        flow["media"] = {key: value for key, value in media.items() if key not in {"retained_video", "target_video", "boundary_frame", "original_first_frame"}}
+        return [_artifact(key, media[key], flow["id"]) for key in ("retained_video", "target_video")]
     if step["kind"] == "media":
         source = _path(flow, step["settings"]["sourceKey"])
         extra_outputs = []
         if step["settings"]["sourceKey"] == "spatial_video":
             normalized = directory / "spatial_normalized.mp4"
-            finalize_spatial(source, _path(flow, "source_video"), normalized, keep_audio=False)
+            finalize_spatial(source, _path(flow, "source_video"), normalized, keep_audio=False, profile=inputs)
             source = normalized
             extra_outputs.append(_artifact("spatial_normalized", normalized, flow["id"]))
         auto_end = inputs["temporalMode"] == "suffix" and not inputs["endImagePath"]
@@ -622,10 +768,14 @@ def _execute_step(flow: dict[str, Any], step: dict[str, Any], job_id: str,
         return extra_outputs + [_artifact(key, media[key], flow["id"]) for key in media_keys]
     output = directory / "final.mp4"
     if step["id"] == "finish":
-        finalize_spatial(_path(flow, "spatial_video"), _path(flow, "source_video"), output, keep_audio=inputs["keepAudio"])
+        finalize_spatial(_path(flow, "spatial_video"), _path(flow, "source_video"), output, keep_audio=inputs["keepAudio"], profile=inputs)
+    elif step['id'] == 'assemble_region' and inputs['generationPolicy'] == 'native':
+        assemble_native_region(_path(flow, 'spatial_video'), _path(flow, 'source_video'), output,
+                               direction=inputs['temporalMode'], cut_seconds=inputs['cutSeconds'],
+                               keep_audio=inputs['keepAudio'], profile=inputs)
     else:
-        assemble_video(_path(flow, "retained_video"), _path(flow, "replacement_video"), _path(flow, "source_video"),
-                       output, direction=inputs["temporalMode"], cut_seconds=inputs["cutSeconds"], keep_audio=inputs["keepAudio"])
+        assemble_video(_path(flow, "retained_video"), _path(flow, "spatial_video" if step["id"] == "assemble_region" else "replacement_video"), _path(flow, "source_video"),
+                       output, direction=inputs["temporalMode"], cut_seconds=inputs["cutSeconds"], keep_audio=inputs["keepAudio"], profile=inputs)
     return [_artifact("final_video", output, flow["id"])]
 
 
@@ -638,20 +788,28 @@ def run_flow_steps(*, flow_id: str, job_id: str, run_all: bool,
             flow = _load(flow_id)
             current_id = flow["activeStep"]
             start_index = next(i for i, step in enumerate(flow["steps"]) if step["id"] == current_id)
+        expected_source = flow["inputs"].get("expectedSourceSeconds")
+        if expected_source:
+            source_meta = probe_video(_path(flow, "source_video"))
+            if abs(source_meta["duration"] - expected_source) > max(1/source_meta["fps"], 0.05):
+                raise ValueError(f"原片须为 {expected_source:g} 秒，实际 {source_meta['duration']:.3f} 秒；请先准备符合要求的素材。")
         # Check temporal bounds before any paid prompt or GPU request, including mixed recipes.
         if flow["mode"] != "spatial":
             source_meta = probe_video(_path(flow, "source_video"))
             inputs = flow["inputs"]
             percent_mode = inputs.get("cutMode", "seconds") == "percent"
+            duration_mode = inputs.get("cutMode") == "duration"
             cut = inputs["cutSeconds"]
             if percent_mode and cut is None:
                 fraction = inputs["replacePercent"] / 100
                 cut = source_meta["duration"] * (fraction if inputs["temporalMode"] == "prefix" else 1 - fraction)
+            if duration_mode:
+                cut = inputs["replacementSeconds"] if inputs["temporalMode"] == "prefix" else source_meta["duration"] - inputs["replacementSeconds"]
             if not 0 < cut < source_meta["duration"]:
                 raise ValueError(f"切点必须在 0 到 {source_meta['duration']:.3f} 秒之间。")
             if min(cut, source_meta["duration"] - cut) < 1 / source_meta["fps"]:
                 raise ValueError("切点两侧都必须至少保留一帧，请调整切点。")
-            if percent_mode:
+            if percent_mode or duration_mode:
                 if inputs["cutSeconds"] is None:
                     with _LOCK:
                         # Preserve a stop request received during metadata reads.
@@ -660,7 +818,8 @@ def run_flow_steps(*, flow_id: str, job_id: str, run_all: bool,
                         _save(flow)
                 direction = "前段" if inputs["temporalMode"] == "prefix" else "后段"
                 replacement = cut if direction == "前段" else source_meta["duration"] - cut
-                log(f"按比例替换{direction} {inputs['replacePercent']:g}%；原视频 {source_meta['duration']:.6g} 秒，"
+                range_label = f"按比例替换{direction} {inputs['replacePercent']:g}%" if percent_mode else f"按时长替换{direction} {inputs['replacementSeconds']:g} 秒"
+                log(f"{range_label}；原视频 {source_meta['duration']:.6g} 秒，"
                     f"切点 {cut:.6g} 秒，替换片段 {replacement:.6g} 秒。")
         for index in range(start_index, len(flow["steps"])):
             with _LOCK:

@@ -29,6 +29,49 @@ def export_metadata(duration, fps=30, width=1920, height=1080):
 
 
 class VideoFlowMediaTests(unittest.TestCase):
+    def test_native_accepts_alignment_crop_but_rejects_under_generation(self):
+        profile={'generationPolicy':'native','outputShortSide':480,'outputFps':60}
+        self.generated_meta=metadata(601/60,60,864,480)
+        self.result_meta=metadata(10,60,854,480)
+        media.finalize_spatial(self.generated,self.source,self.root/'native.mp4',profile=profile)
+        graph=self.option_values(self.commands[-1],'-filter_complex')[0]
+        self.assertIn('crop=854:480:0:0',graph)
+        self.assertIn('trim=end_frame=600',graph)
+        for prohibited in ('scale=','fps=','tpad=','setpts=(PTS-STARTPTS)*'):
+            self.assertNotIn(prohibited,graph)
+        for meta in (metadata(10,16,864,480),metadata(10,60,512,288),metadata(599/60,60,864,480)):
+            self.generated_meta=meta
+            count=len(self.commands)
+            with self.assertRaises(ValueError):
+                media.finalize_spatial(self.generated,self.source,self.root/'invalid.mp4',profile=profile)
+            self.assertEqual(len(self.commands),count)
+
+    def test_native_mixed_keeps_generated_frame_cadence(self):
+        profile={'generationPolicy':'native','outputShortSide':480,'outputFps':24}
+        self.retained_meta=metadata(8)
+        self.generated_meta=metadata(49/24,24,864,480)
+        self.result_meta=metadata(10,24,854,480)
+        media.assemble_video(self.retained,self.generated,self.source,self.root/'mixed.mp4',
+                             direction='suffix',cut_seconds=8,profile=profile)
+        graph=self.option_values(self.commands[-1],'-filter_complex')[0]
+        generated=graph.split('[1:v:0]')[1].split('[generated]')[0]
+        self.assertIn('trim=end_frame=48',generated)
+        self.assertNotIn('fps=',generated)
+        self.assertNotIn('scale=',generated)
+        self.assertNotIn('tpad=',graph.split('concat=')[1])
+
+    def test_custom_output_profiles_reach_filters_encoder_and_validation(self):
+        for size, width in ((480, 854), (1080, 1920)):
+            for fps in (16, 24, 60):
+                self.result_meta = export_metadata(10, fps=fps, width=width, height=size)
+                output = self.root / f"custom_{size}_{fps}.mp4"
+                result = media.finalize_spatial(self.generated, self.source, output,
+                                                profile={"outputShortSide": size, "outputFps": fps})
+                command = self.commands[-1]
+                self.assertIn(f"fps={fps}", self.option_values(command, "-filter_complex")[0])
+                self.assertEqual(self.option_values(command, "-r:v"), [str(fps)])
+                self.assertEqual(result["frames"], fps*10)
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="video_flow_media_mock_")
         self.addCleanup(temporary.cleanup)

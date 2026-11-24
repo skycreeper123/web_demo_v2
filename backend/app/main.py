@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import mimetypes
@@ -1442,6 +1443,12 @@ class DemoHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Prompt Tool Web server")
+    parser.add_argument("--host", default="127.0.0.1", help="Listen address (default: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=8000, help="Listen port (default: 8000)")
+    args = parser.parse_args()
+    if not 1 <= args.port <= 65535:
+        parser.error("--port must be between 1 and 65535")
     # 启动顺序：日志 -> 目录 -> 配置 -> 模板目录 -> HTTP 服务。
     log_paths = setup_logging()
     APP_LOGGER.info("Application startup. date=2026-08-18 log_dir=%s", log_paths.root_dir)
@@ -1456,14 +1463,17 @@ def main() -> None:
     load_prompt_config(IMAGE_PROMPT_KIND)
     load_prompt_config(IMAGE_EDIT_PROMPT_KIND)
     load_prompt_config(VIDEO_PROMPT_KIND)
-    server = LoggedThreadingHTTPServer(("127.0.0.1", 8000), DemoHandler)
-    APP_LOGGER.info("Prompt tool demo running at http://127.0.0.1:8000")
-    print("Prompt tool demo running at http://127.0.0.1:8000")
+    server = LoggedThreadingHTTPServer((args.host, args.port), DemoHandler)
+    url = f"http://{args.host}:{args.port}"
+    APP_LOGGER.info("Prompt tool demo running at %s", url)
+    print(f"Prompt tool demo running at {url}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         APP_LOGGER.info("Server stopped by KeyboardInterrupt.")
         print("\nStopped.")
+    finally:
+        server.server_close()
 
 
 if __name__ == "__main__":

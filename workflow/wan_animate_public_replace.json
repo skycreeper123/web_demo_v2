@@ -1,0 +1,581 @@
+{
+  "key": "wan_animate_public_replace.json",
+  "label": "公开版 · WanAnimate 单人人物替换",
+  "workflow_type": "image_video_to_video",
+  "description": "Kijai 公开流程适配；参考人物图 + 单人原视频。默认 512 宽、16 fps、最多 33 帧，自动跟踪人物遮罩。多人指定对象与长视频尚未验收。",
+  "workflow": {
+    "1": {
+      "class_type": "LoadImage",
+      "inputs": {
+        "image": "public-wan/reference.png"
+      },
+      "_meta": {
+        "title": "替换人物参考图"
+      }
+    },
+    "2": {
+      "class_type": "VHS_LoadVideo",
+      "inputs": {
+        "video": "public-wan/source.mp4",
+        "force_rate": 16,
+        "custom_width": 512,
+        "custom_height": 0,
+        "frame_load_cap": 33,
+        "skip_first_frames": 0,
+        "select_every_nth": 1,
+        "format": "Wan"
+      },
+      "_meta": {
+        "title": "原视频（单人）"
+      }
+    },
+    "3": {
+      "class_type": "GetImageSizeAndCount",
+      "inputs": {
+        "image": [
+          "2",
+          0
+        ]
+      },
+      "_meta": {
+        "title": "GetImageSizeAndCount"
+      }
+    },
+    "4": {
+      "class_type": "ImageResizeKJv2",
+      "inputs": {
+        "image": [
+          "1",
+          0
+        ],
+        "width": [
+          "3",
+          1
+        ],
+        "height": [
+          "3",
+          2
+        ],
+        "upscale_method": "lanczos",
+        "keep_proportion": "pad_edge_pixel",
+        "crop_position": "center",
+        "pad_color": "0, 0, 0",
+        "divisible_by": 16,
+        "device": "cpu"
+      },
+      "_meta": {
+        "title": "ImageResizeKJv2"
+      }
+    },
+    "10": {
+      "class_type": "OnnxDetectionModelLoader",
+      "inputs": {
+        "vitpose_model": "vitpose-l-wholebody.onnx",
+        "yolo_model": "yolov10m.onnx",
+        "onnx_device": "CUDAExecutionProvider"
+      },
+      "_meta": {
+        "title": "OnnxDetectionModelLoader"
+      }
+    },
+    "11": {
+      "class_type": "PoseAndFaceDetection",
+      "inputs": {
+        "model": [
+          "10",
+          0
+        ],
+        "images": [
+          "3",
+          0
+        ],
+        "width": [
+          "3",
+          1
+        ],
+        "height": [
+          "3",
+          2
+        ],
+        "face_padding": 0
+      },
+      "_meta": {
+        "title": "PoseAndFaceDetection"
+      }
+    },
+    "12": {
+      "class_type": "DrawViTPose",
+      "inputs": {
+        "pose_data": [
+          "11",
+          0
+        ],
+        "width": [
+          "3",
+          1
+        ],
+        "height": [
+          "3",
+          2
+        ],
+        "retarget_padding": 16,
+        "body_stick_width": -1,
+        "hand_stick_width": -1,
+        "draw_head": true
+      },
+      "_meta": {
+        "title": "DrawViTPose"
+      }
+    },
+    "13": {
+      "class_type": "DownloadAndLoadSAM2Model",
+      "inputs": {
+        "model": "sam2.1_hiera_base_plus.safetensors",
+        "segmentor": "video",
+        "device": "cuda",
+        "precision": "bf16"
+      },
+      "_meta": {
+        "title": "DownloadAndLoadSAM2Model"
+      }
+    },
+    "14": {
+      "class_type": "Sam2Segmentation",
+      "inputs": {
+        "sam2_model": [
+          "13",
+          0
+        ],
+        "image": [
+          "3",
+          0
+        ],
+        "bboxes": [
+          "11",
+          3
+        ],
+        "keep_model_loaded": false,
+        "individual_objects": false
+      },
+      "_meta": {
+        "title": "Sam2Segmentation"
+      }
+    },
+    "15": {
+      "class_type": "GrowMaskWithBlur",
+      "inputs": {
+        "incremental_expandrate": 0.0,
+        "tapered_corners": true,
+        "flip_input": false,
+        "lerp_alpha": 1.0,
+        "decay_factor": 1.0,
+        "mask": [
+          "14",
+          0
+        ],
+        "expand": 10,
+        "blur_radius": 0
+      },
+      "_meta": {
+        "title": "GrowMaskWithBlur"
+      }
+    },
+    "16": {
+      "class_type": "BlockifyMask",
+      "inputs": {
+        "masks": [
+          "15",
+          0
+        ],
+        "block_size": 32
+      },
+      "_meta": {
+        "title": "BlockifyMask"
+      }
+    },
+    "17": {
+      "class_type": "DrawMaskOnImage",
+      "inputs": {
+        "image": [
+          "3",
+          0
+        ],
+        "mask": [
+          "16",
+          0
+        ],
+        "color": "0, 0, 0"
+      },
+      "_meta": {
+        "title": "DrawMaskOnImage"
+      }
+    },
+    "20": {
+      "class_type": "WanVideoVAELoader",
+      "inputs": {
+        "model_name": "WAN/Wan2_1_VAE_bf16.safetensors",
+        "precision": "bf16"
+      },
+      "_meta": {
+        "title": "WanVideoVAELoader"
+      }
+    },
+    "21": {
+      "class_type": "CLIPVisionLoader",
+      "inputs": {
+        "clip_name": "WAN/clip_vision_h.safetensors"
+      },
+      "_meta": {
+        "title": "CLIPVisionLoader"
+      }
+    },
+    "22": {
+      "class_type": "WanVideoClipVisionEncode",
+      "inputs": {
+        "clip_vision": [
+          "21",
+          0
+        ],
+        "image_1": [
+          "4",
+          0
+        ],
+        "strength_1": 1,
+        "strength_2": 1,
+        "crop": "center",
+        "combine_embeds": "average",
+        "force_offload": true
+      },
+      "_meta": {
+        "title": "WanVideoClipVisionEncode"
+      }
+    },
+    "23": {
+      "class_type": "WanVideoTextEncodeCached",
+      "inputs": {
+        "model_name": "WAN/umt5-xxl-enc-fp8_e4m3fn.safetensors",
+        "precision": "bf16",
+        "quantization": "fp8_e4m3fn",
+        "device": "gpu",
+        "use_disk_cache": true,
+        "positive_prompt": "The character from the reference image follows the motion and expression of the person in the video. Preserve the original background and camera movement. Consistent identity, natural motion, high quality.",
+        "negative_prompt": "blurry, distorted face, extra limbs, flickering, text, watermark, inconsistent identity"
+      },
+      "_meta": {
+        "title": "正负向提示词"
+      }
+    },
+    "24": {
+      "class_type": "WanVideoLoraSelectMulti",
+      "inputs": {
+        "strength_2": 1.0,
+        "strength_3": 1.0,
+        "strength_4": 1.0,
+        "lora_0": "WANAnimate/WanAnimate_relight_lora_fp16.safetensors",
+        "strength_0": 1,
+        "lora_1": "WANAnimate/lightx2v_I2V_14B_480p_cfg_step_distill_rank64_bf16.safetensors",
+        "strength_1": 1.2,
+        "lora_2": "none",
+        "lora_3": "none",
+        "lora_4": "none",
+        "merge_loras": false,
+        "low_mem_load": false
+      },
+      "_meta": {
+        "title": "WanVideoLoraSelectMulti"
+      }
+    },
+    "25": {
+      "class_type": "WanVideoBlockSwap",
+      "inputs": {
+        "blocks_to_swap": 20,
+        "offload_img_emb": false,
+        "offload_txt_emb": false,
+        "use_non_blocking": false,
+        "vace_blocks_to_swap": 0,
+        "prefetch_blocks": 0,
+        "block_swap_debug": false
+      },
+      "_meta": {
+        "title": "WanVideoBlockSwap"
+      }
+    },
+    "26": {
+      "class_type": "WanVideoModelLoader",
+      "inputs": {
+        "model": "WANAnimate/Wan2_2-Animate-14B_fp8_e4m3fn_scaled_KJ.safetensors",
+        "base_precision": "bf16",
+        "quantization": "disabled",
+        "load_device": "offload_device",
+        "attention_mode": "sdpa"
+      },
+      "_meta": {
+        "title": "WanVideoModelLoader"
+      }
+    },
+    "27": {
+      "class_type": "WanVideoSetLoRAs",
+      "inputs": {
+        "model": [
+          "26",
+          0
+        ],
+        "lora": [
+          "24",
+          0
+        ]
+      },
+      "_meta": {
+        "title": "WanVideoSetLoRAs"
+      }
+    },
+    "28": {
+      "class_type": "WanVideoSetBlockSwap",
+      "inputs": {
+        "model": [
+          "27",
+          0
+        ],
+        "block_swap_args": [
+          "25",
+          0
+        ]
+      },
+      "_meta": {
+        "title": "WanVideoSetBlockSwap"
+      }
+    },
+    "30": {
+      "class_type": "WanVideoAnimateEmbeds",
+      "inputs": {
+        "vae": [
+          "20",
+          0
+        ],
+        "width": [
+          "3",
+          1
+        ],
+        "height": [
+          "3",
+          2
+        ],
+        "num_frames": [
+          "3",
+          3
+        ],
+        "force_offload": true,
+        "frame_window_size": 77,
+        "colormatch": "disabled",
+        "pose_strength": 1,
+        "face_strength": 1,
+        "tiled_vae": false,
+        "clip_embeds": [
+          "22",
+          0
+        ],
+        "ref_images": [
+          "4",
+          0
+        ],
+        "pose_images": [
+          "12",
+          0
+        ],
+        "face_images": [
+          "11",
+          1
+        ],
+        "bg_images": [
+          "17",
+          0
+        ],
+        "mask": [
+          "16",
+          0
+        ]
+      },
+      "_meta": {
+        "title": "WanVideoAnimateEmbeds"
+      }
+    },
+    "31": {
+      "class_type": "WanVideoSampler",
+      "inputs": {
+        "model": [
+          "28",
+          0
+        ],
+        "image_embeds": [
+          "30",
+          0
+        ],
+        "text_embeds": [
+          "23",
+          0
+        ],
+        "steps": 6,
+        "cfg": 1,
+        "shift": 5,
+        "seed": 42,
+        "force_offload": true,
+        "scheduler": "dpm++_sde",
+        "riflex_freq_index": 0,
+        "denoise_strength": 1,
+        "rope_function": "comfy",
+        "start_step": 0,
+        "end_step": -1
+      },
+      "_meta": {
+        "title": "WanVideoSampler"
+      }
+    },
+    "32": {
+      "class_type": "WanVideoDecode",
+      "inputs": {
+        "tile_x": 272,
+        "tile_y": 272,
+        "tile_stride_x": 144,
+        "tile_stride_y": 128,
+        "vae": [
+          "20",
+          0
+        ],
+        "samples": [
+          "31",
+          0
+        ],
+        "enable_vae_tiling": false
+      },
+      "_meta": {
+        "title": "WanVideoDecode"
+      }
+    },
+    "40": {
+      "class_type": "VHS_VideoCombine",
+      "inputs": {
+        "images": [
+          "33",
+          0
+        ],
+        "audio": [
+          "2",
+          2
+        ],
+        "frame_rate": 16,
+        "loop_count": 0,
+        "filename_prefix": "public-wan/replace",
+        "format": "video/h264-mp4",
+        "pix_fmt": "yuv420p",
+        "crf": 19,
+        "save_metadata": true,
+        "trim_to_audio": false,
+        "pingpong": false,
+        "save_output": true
+      },
+      "_meta": {
+        "title": "人物替换成片"
+      }
+    },
+    "33": {
+      "class_type": "ImageFromBatch",
+      "inputs": {
+        "image": [
+          "32",
+          0
+        ],
+        "batch_index": 0,
+        "length": [
+          "3",
+          3
+        ]
+      },
+      "_meta": {
+        "title": "Remove window padding"
+      }
+    }
+  },
+  "bindings": {
+    "image_ref": [
+      {
+        "node": "1",
+        "input": "image",
+        "required": true
+      }
+    ],
+    "video_ref": [
+      {
+        "node": "2",
+        "input": "video",
+        "required": true
+      }
+    ],
+    "positive_prompt": [
+      {
+        "node": "23",
+        "input": "positive_prompt",
+        "required": true
+      }
+    ],
+    "negative_prompt": [
+      {
+        "node": "23",
+        "input": "negative_prompt"
+      }
+    ],
+    "seed": [
+      {
+        "node": "31",
+        "input": "seed",
+        "type": "int"
+      }
+    ],
+    "output_prefix": [
+      {
+        "node": "40",
+        "input": "filename_prefix"
+      }
+    ],
+    "params.width": [
+      {
+        "node": "2",
+        "input": "custom_width",
+        "type": "int"
+      }
+    ],
+    "params.height": [
+      {
+        "node": "2",
+        "input": "custom_height",
+        "type": "int"
+      }
+    ],
+    "params.frame_limit": [
+      {
+        "node": "2",
+        "input": "frame_load_cap",
+        "type": "int"
+      }
+    ],
+    "params.fps": [
+      {
+        "node": "2",
+        "input": "force_rate",
+        "type": "float"
+      },
+      {
+        "node": "40",
+        "input": "frame_rate",
+        "type": "float"
+      }
+    ],
+    "params.steps": [
+      {
+        "node": "31",
+        "input": "steps",
+        "type": "int"
+      }
+    ]
+  },
+  "upstream": "https://github.com/kijai/ComfyUI-WanVideoWrapper/blob/088128b224242e110d3906c6750e9a3a348a659b/example_workflows/wanvideo_WanAnimate_preprocess_example_02.json"
+}

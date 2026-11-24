@@ -69,8 +69,9 @@ class ComfyServerClient:
         value = self._request("GET", "/system_stats")
         return value if isinstance(value, dict) else {}
 
-    def get_object_info(self) -> dict[str, Any]:
-        value = self._request("GET", "/object_info")
+    def get_object_info(self, node_type: str | None = None) -> dict[str, Any]:
+        path = f"/object_info/{node_type}" if node_type else "/object_info"
+        value = self._request("GET", path)
         return value if isinstance(value, dict) else {}
 
     def get_queue(self) -> dict[str, Any]:

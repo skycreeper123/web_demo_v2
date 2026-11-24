@@ -27,8 +27,8 @@ _LOCK = threading.RLock()
 _ACTIVE: set[str] = set()
 _ID = re.compile(r"^[a-f0-9]{16}$")
 _ROW_FIELDS = {"name", "videoPath", "referenceImagePath", "referenceAlt1Path", "referenceAlt2Path", "startImagePath", "endImagePath",
-               "cutMode", "replacePercent", "cutSeconds", "editInstruction"}
-_DEFAULT_FIELDS = _ROW_FIELDS | {"mode", "temporalMode", "spatialTarget", "promptSource", "keepAudio"}
+               "cutMode", "replacePercent", "cutSeconds", "replacementSeconds", "editInstruction"} | flows.PROFILE_FIELDS
+_DEFAULT_FIELDS = _ROW_FIELDS | {"mode", "temporalMode", "spatialTarget", "mixedScope", "promptSource", "keepAudio"}
 
 
 def _directory(batch_id: str) -> Path:
@@ -178,7 +178,9 @@ def create_batch(payload: dict[str, Any]) -> dict[str, Any]:
             overrides = {key: value for key, value in row.items()
                          if value is not None and not (isinstance(value, str) and not value.strip())}
             if "cutMode" not in overrides:
-                if "replacePercent" in overrides:
+                if "replacementSeconds" in overrides:
+                    overrides["cutMode"] = "duration"
+                elif "replacePercent" in overrides:
                     overrides["cutMode"] = "percent"
                 elif "cutSeconds" in overrides:
                     overrides["cutMode"] = "seconds"
@@ -268,12 +270,15 @@ def resolve_manifest(batch_id: str) -> Path:
         path = _directory(batch_id) / "summary.csv"
         temporary = path.with_suffix(".csv.tmp")
         with temporary.open("w", encoding="utf-8-sig", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=["index", "name", "flow_id", "status", "error", "final_video"])
+            parameter_fields = ["mode", "temporalMode", "spatialTarget", "mixedScope", "cutMode", "replacementSeconds", "replacePercent", "cutSeconds", *sorted(flows.PROFILE_FIELDS)]
+            writer = csv.DictWriter(handle, fieldnames=["index", "name", "flow_id", "status", "error", "final_video", *parameter_fields])
             writer.writeheader()
             for row in batch["rows"]:
+                flow = flows.get_flow(row["flowId"])
                 writer.writerow({"index": row["index"], "name": row["name"], "flow_id": row["flowId"],
                                  "status": row["status"], "error": row["error"],
-                                 "final_video": (row.get("finalVideo") or {}).get("path", "")})
+                                 "final_video": (row.get("finalVideo") or {}).get("path", ""),
+                                 **{key: flow["mode"] if key == "mode" else flow["inputs"].get(key, "") for key in parameter_fields}})
         temporary.replace(path)
         return path
 

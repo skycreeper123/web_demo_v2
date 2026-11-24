@@ -1,5 +1,6 @@
 """Recipe state and handoff checks; all media/model execution is replaced locally."""
 import importlib.util
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -14,9 +15,50 @@ if "web_demo" not in sys.modules:
     spec.loader.exec_module(package)
 
 from web_demo.backend.app.services import video_flow_service as flows
+from web_demo.backend.app.services.comfyui_comm.workflow_binder import bind_workflow, resolve_template_payload
 
 
 class FlowTests(unittest.TestCase):
+    def test_duration_means_replacement_length_in_both_directions(self):
+        for mode in ("prefix", "suffix", "mixed"):
+            for duration in (2, 5, 8):
+                for direction in (("prefix", "suffix") if mode == "mixed" else (mode,)):
+                    flow = self.create(mode, temporalMode=direction, cutMode="duration", replacementSeconds=duration,
+                                       mixedScope="region", outputShortSide=480, outputFps=24)
+                    result = self.run_worker(flow)
+                    self.assertEqual(result["status"], "completed")
+                    saved = flows.get_flow(flow["id"])
+                    self.assertEqual(saved["inputs"]["cutSeconds"], duration if direction == "prefix" else 10-duration)
+                    self.assertEqual(saved["inputs"]["outputFps"], 24)
+                    if mode == "mixed":
+                        self.assertEqual([s["id"] for s in saved["steps"]], ["prepare_region", "spatial_prompt", "spatial_render", "assemble_region"])
+                        self.assertEqual(saved["steps"][2]["settings"]["sourceKey"], "target_video")
+
+    def test_source_and_replacement_duration_validation_happens_before_model_work(self):
+        for options in ({"expectedSourceSeconds": 10}, {"cutMode": "duration", "replacementSeconds": 8}):
+            flow = self.create("suffix", **options)
+            calls = []
+            result = self.run_worker(flow, duration=6, execute=lambda *args: calls.append(args))
+            self.assertEqual(result["status"], "failed")
+            self.assertEqual(calls, [])
+
+    def test_regional_generation_receives_only_the_selected_video_and_saved_profile(self):
+        flow = self.create("mixed", mixedScope="region", cutMode="duration", replacementSeconds=2,
+                           generationLongSide=768, generationFps=24, outputShortSide=480, outputFps=60)
+        target = self.root / "target.mp4"
+        target.write_bytes(b"target")
+        flow["artifacts"]["target_video"] = flows._artifact("target_video", target, flow["id"])
+        step = next(s for s in flow["steps"] if s["id"] == "spatial_render")
+        with patch.object(flows, "load_comfy_config", return_value={"workflow_manifest_dir": str(ROOT / "workflow")}), \
+             patch.object(flows, "probe_video", return_value={"width": 1280, "height": 720, "duration": 10}), \
+             patch.object(flows, "run_comfy_job", return_value={"status": "completed", "items": [{"path": str(target)}]}) as comfy:
+            flows._run_comfy(flow, step, self.root, "region", lambda _: None, lambda **_: None)
+        form = comfy.call_args.kwargs["payload"]["formInputs"]
+        self.assertEqual(form["video_ref"], str(target))
+        self.assertEqual((form["params.width"], form["params.height"], form["params.fps"]), (768, 432, 24))
+        graph = json.loads(comfy.call_args.kwargs["payload"]["workflowJsonText"])
+        self.assertNotIn("audio", graph["40"]["inputs"])
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
@@ -36,7 +78,45 @@ class FlowTests(unittest.TestCase):
 
     def create(self, mode="spatial", **overrides):
         return flows.create_flow({**self.media, "startImagePath": "", "mode": mode, "cutSeconds": 4,
-                                  "promptSource": "manual", **overrides})
+                                  "promptSource": "manual", "generationPolicy": "legacy", **overrides})
+
+    def test_new_flows_default_to_native_and_model_receives_target_specs(self):
+        fresh = flows.build_flow({**self.media, 'mode': 'spatial'})
+        self.assertEqual(fresh['inputs']['generationPolicy'], 'native')
+        for mode in ('mixed', 'suffix'):
+            with self.subTest(mode=mode):
+                flow = self.create(mode, generationPolicy='native', mixedScope='region', spatialTarget='background',
+                                   outputShortSide=480, outputFps=60)
+                flow['media'] = {'replacement_duration': 2}
+                flow['artifacts']['target_video'] = flow['artifacts']['source_video']
+                flow['artifacts']['boundary_frame'] = flows._artifact('boundary_frame', self.media['endImagePath'], flow['id'])
+                step = next(s for s in flow['steps'] if s['id'] == ('spatial_render' if mode == 'mixed' else 'motion_render'))
+                out = self.root / f'{mode}.mp4'; out.write_bytes(b'output')
+                def probe(path):
+                    return ({'width':864, 'height':480, 'fps':60, 'frames':121, 'duration':121/60}
+                            if Path(path) == out else {'width':1280,'height':720,'fps':24,'frames':240,'duration':10})
+                with patch.object(flows, 'probe_video', side_effect=probe), \
+                     patch.object(flows, 'prepare_native_conditioning', return_value=self.root/'conditions.mp4') as prepare, \
+                     patch.object(flows, 'load_comfy_config', return_value={'workflow_manifest_dir':str(ROOT/'workflow')}), \
+                     patch.object(flows.ComfyServerClient, 'get_object_info', return_value={'UGCDrawBlackMask': {'input': {}}}), \
+                     patch.object(flows, 'run_comfy_job', return_value={'status':'completed','items':[{'path':str(out)}]}) as run:
+                    outputs = flows._run_comfy(flow, step, self.root, 'native', lambda _:None, lambda **_:None)
+                payload = run.call_args.kwargs['payload']; form=payload['formInputs']; graph=json.loads(payload['workflowJsonText'])
+                if mode == 'mixed':
+                    self.assertEqual((form['params.width'], form['params.height'], form['params.fps']), (864,480,60))
+                    self.assertEqual(prepare.call_args.args[2]['requested_frames'],121)
+                    self.assertEqual(graph['2']['inputs']['format'],'None')
+                    self.assertEqual(graph['14']['class_type'], 'UGCTrackedPeopleMask')
+                    self.assertEqual(graph['17']['class_type'], 'UGCDrawBlackMask')
+                    reloaded = resolve_template_payload(payload, {})
+                    self.assertNotIn('params.node_14.keep_model_loaded', reloaded['bindings'])
+                    self.assertNotIn('params.node_17.color', reloaded['bindings'])
+                    self.assertIn('params.width', reloaded['bindings'])
+                else:
+                    self.assertEqual(form['params.node_162.value'],121)
+                    self.assertEqual(form['params.node_145.frame_rate'],60)
+                    self.assertEqual(graph['145']['inputs']['images'],graph['246']['inputs']['image'])
+                self.assertTrue(any(o['key'].endswith('_spec') for o in outputs))
 
     def execute(self, flow, step, *_args):
         path = self.root / f"{step['id']}-{step['attempts']}.txt"
@@ -335,7 +415,7 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(payload["formInputs"]["params.node_161.value"], 1088)
         self.assertEqual(outputs[0]["key"], "replacement_video")
 
-    def test_video_generation_uses_hd_dimensions_and_30fps_for_all_recipes(self):
+    def test_recipes_use_public_full_video_for_people_and_hd_for_motion(self):
         for mode, direction in (("spatial", "prefix"), ("prefix", "prefix"),
                                 ("suffix", "suffix"), ("mixed", "prefix"), ("mixed", "suffix")):
             for source_width, source_height, width, height in ((1280, 720, 1920, 1088),
@@ -353,13 +433,103 @@ class FlowTests(unittest.TestCase):
                             flows._run_comfy(flow, step, self.root, "hd", lambda _: None, lambda **_: None)
                         form = comfy.call_args.kwargs["payload"]["formInputs"]
                         if step["settings"]["role"] == "spatial":
-                            self.assertEqual((form["params.node_1420.width"], form["params.node_1420.height"]), (width, height))
-                            self.assertEqual(form["params.node_1412.force_rate"], 30)
-                            self.assertEqual(form["params.node_1412.frame_load_cap"], 0)
+                            payload = comfy.call_args.kwargs["payload"]
+                            self.assertEqual(payload["templateKey"], "wan_animate_public_replace.json")
+                            self.assertEqual(payload["outputNodeId"], "40")
+                            expected = (512, 288) if source_width > source_height else (288, 512)
+                            self.assertEqual((form["params.width"], form["params.height"]), expected)
+                            self.assertEqual(form["params.fps"], 16)
+                            self.assertEqual(form["params.frame_limit"], 0)
+                            self.assertEqual(form["params.node_2.skip_first_frames"], 0)
+                            self.assertEqual(form["params.node_2.select_every_nth"], 1)
                         else:
                             self.assertEqual((form["params.node_160.value"], form["params.node_161.value"]), (width, height))
                             self.assertEqual(form["params.node_145.frame_rate"], 30)
                             self.assertEqual(form["params.node_162.value"], 181)
+
+    def test_background_edits_inverse_region_and_restores_original_person(self):
+        flow = self.create(spatialTarget="background")
+        step = next(s for s in flow["steps"] if s["id"] == "spatial_render")
+        with patch.object(flows, "load_comfy_config", return_value={"workflow_manifest_dir": str(ROOT / "workflow")}), \
+             patch.object(flows, "probe_video", return_value={"width": 1280, "height": 720, "duration": 10}), \
+             patch.object(flows, "run_comfy_job", return_value={"status": "completed", "items": [{"path": self.media["videoPath"]}]}) as comfy:
+            flows._run_comfy(flow, step, self.root, "legacy", lambda _: None, lambda **_: None)
+        payload = comfy.call_args.kwargs["payload"]
+        self.assertEqual(payload["templateKey"], flows.TEMPLATES["spatial"]["key"])
+        self.assertEqual(payload["formInputs"]["params.frame_limit"], 0)
+        graph = json.loads(payload["workflowJsonText"])
+        self.assertEqual(graph["18"]["inputs"]["mask"], ["14", 0])
+        self.assertEqual(graph["15"]["inputs"]["mask"], ["18", 0])
+        self.assertEqual(graph["30"]["inputs"]["mask"], graph["17"]["inputs"]["mask"])
+        composite = graph[graph["40"]["inputs"]["images"][0]]
+        self.assertEqual(composite["class_type"], "ImageCompositeMasked")
+        self.assertEqual(composite["inputs"]["source"], ["3", 0])
+        self.assertEqual(composite["inputs"]["mask"], ["14", 0])
+        self.assertEqual(composite["inputs"]["destination"], ["33", 0])
+        self.assertNotIn("audio", graph["40"]["inputs"])
+
+    def test_native_background_uses_bounded_composite_when_installed(self):
+        flow = self.create(spatialTarget="background", generationPolicy="native",
+                           outputShortSide=1080, outputFps=24)
+        step = next(s for s in flow["steps"] if s["id"] == "spatial_render")
+        source = {"width": 1280, "height": 720, "duration": 10, "fps": 24, "frames": 240}
+        output = {"width": 1920, "height": 1088, "duration": 241/24, "fps": 24, "frames": 241}
+        video = self.root / "generated.mp4"
+        video.write_bytes(b"video")
+        node = "UGCCompositeBackground"
+        for installed in (True, False):
+            with self.subTest(installed=installed), \
+                 patch.object(flows, "load_comfy_config", return_value={"workflow_manifest_dir": str(ROOT / "workflow")}), \
+                 patch.object(flows, "probe_video", side_effect=[source, output]), \
+                 patch.object(flows, "prepare_native_conditioning", return_value=self.root / "conditions.mp4"), \
+                 patch.object(flows.ComfyServerClient, "get_object_info", return_value={node: {'input': {}}} if installed else {}) as info, \
+                 patch.object(flows, "run_comfy_job", return_value={"status": "completed", "items": [{"path": str(video)}]}) as comfy:
+                flows._run_comfy(flow, step, self.root, "native", lambda _: None, lambda **_: None)
+            self.assertEqual([call.args for call in info.call_args_list], [('UGCDrawBlackMask',), (node,)])
+            graph = json.loads(comfy.call_args.kwargs["payload"]["workflowJsonText"])
+            self.assertEqual(graph["40"]["inputs"]["images"], ["34", 0])
+            composite = graph["34"]
+            self.assertEqual(composite["class_type"], node if installed else "ImageCompositeMasked")
+            self.assertEqual(composite["inputs"]["destination"], ["32", 0] if installed else ["33", 0])
+            self.assertEqual(composite["inputs"]["source"], ["3", 0])
+            self.assertEqual(composite["inputs"]["mask"], ["14", 0])
+
+    def test_native_1080p60_motion_selects_supported_chunked_rope(self):
+        flow = self.create('suffix', generationPolicy='native', outputShortSide=1080, outputFps=60)
+        source = {'width': 1280, 'height': 720, 'duration': 10, 'fps': 24, 'frames': 240}
+        output = {'width': 1920, 'height': 1088, 'duration': 301/60, 'fps': 60, 'frames': 301}
+        flow['media'] = {'replacement_duration': 5}
+        flow['artifacts']['boundary_frame'] = flows._artifact('boundary_frame', self.media['endImagePath'], flow['id'])
+        flow['artifacts']['target_end'] = flow['artifacts']['boundary_frame']
+        step = next(s for s in flow['steps'] if s['id'] == 'motion_render')
+        video = self.root / 'generated.mp4'
+        video.write_bytes(b'video')
+        info = {'WanVideoSampler': {'input': {'optional': {'rope_function': [['comfy', 'comfy_chunked']]}}}}
+        with patch.object(flows, 'load_comfy_config', return_value={'workflow_manifest_dir': str(ROOT/'workflow')}), \
+             patch.object(flows, 'probe_video', side_effect=[source, output]), \
+             patch.object(flows.ComfyServerClient, 'get_object_info', return_value=info), \
+             patch.object(flows, 'run_comfy_job', return_value={'status': 'completed', 'items': [{'path': str(video)}]}) as comfy:
+            flows._run_comfy(flow, step, self.root, 'native', lambda _: None, lambda **_: None)
+        payload = comfy.call_args.kwargs['payload']
+        graph = resolve_template_payload(payload, {})['workflow']
+        self.assertEqual(graph['90']['inputs']['rope_function'], 'comfy_chunked')
+        self.assertEqual(graph['213']['inputs']['rope_function'], 'comfy_chunked')
+        self.assertEqual(payload['formInputs']['params.node_162.value'], 301)
+        self.assertEqual(payload['formInputs']['params.node_145.frame_rate'], 60)
+
+    def test_public_graph_preserves_video_frame_count_and_removes_window_padding(self):
+        resolved = flows.resolve_template_payload({"templateKey": "wan_animate_public_replace.json"},
+                                                   {"workflow_manifest_dir": str(ROOT / "workflow")})
+        graph = bind_workflow(template_payload=resolved,
+                              staged_inputs={"image_ref": "ref.png", "video_ref": "source.mp4"},
+                              payload={"positivePrompt": "replace person", "outputNodeId": "40",
+                                       "params": {"fps": 16, "frame_limit": 0}})
+        self.assertEqual(graph["2"]["inputs"]["frame_load_cap"], 0)
+        self.assertEqual(graph["2"]["inputs"]["force_rate"], graph["40"]["inputs"]["frame_rate"])
+        self.assertEqual(graph["30"]["inputs"]["num_frames"], ["3", 3])
+        trim = graph[graph["40"]["inputs"]["images"][0]]
+        self.assertEqual(trim["class_type"], "ImageFromBatch")
+        self.assertEqual(trim["inputs"], {"image": ["32", 0], "batch_index": 0, "length": ["3", 3]})
 
 
 if __name__ == "__main__":

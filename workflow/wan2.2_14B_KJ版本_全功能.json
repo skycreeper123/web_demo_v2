@@ -620,6 +620,7 @@
       "num_beams": 1,
       "repetition_penalty": 1.2,
       "frame_count": 16,
+      "video_frame_size": "auto",
       "keep_model_loaded": true,
       "seed": 4186802684,
       "image": [
